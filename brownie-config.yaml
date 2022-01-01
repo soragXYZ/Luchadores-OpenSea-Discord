@@ -1,0 +1,16 @@
+dotenv: .env
+networks:
+  default: polygon-main
+  polygon-main:
+    lucha_SC: '0x8b4616926705fb61e9c4eeac07cd946a5d4b0760' # SC of Luchadores NFT on Ethereum
+    lucha_claim: '0xE8B73c064BD3B8c5DB438118543ACd6AAb18F108' # SC of Luchadores yield on Polygon
+
+price:
+  eth: '4000'
+  lucha: '2'
+
+discord:
+  token: ${DISCORD_TOKEN}
+  channel: ${DISCORD_CHANNEL}
+  channel_bis: ${DISCORD_CHANNEL_BIS}
+  channel_lucha: ${DISCORD_CHANNEL_LUCHA}
