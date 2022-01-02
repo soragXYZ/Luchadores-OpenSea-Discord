@@ -14,3 +14,4 @@ discord:
   channel: ${DISCORD_CHANNEL}
   channel_bis: ${DISCORD_CHANNEL_BIS}
   channel_lucha: ${DISCORD_CHANNEL_LUCHA}
+  channel_lucha_not_claimed: ${DISCORD_CHANNEL_LUCHA_NOT_CLAIMED}
