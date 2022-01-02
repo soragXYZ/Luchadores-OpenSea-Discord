@@ -2,6 +2,8 @@ from brownie import config, Contract, interface
 import discord
 import requests
 import json
+import io
+import aiohttp
 
 
 
@@ -163,7 +165,14 @@ async def on_message(message):
             msg += "\n$LUCHA / day: "
             msg += str(luchaYield)
 
-        await channel_lucha.send(msg)
+        img_url = "https://luchadores-io.s3.us-east-2.amazonaws.com/img/" + str(num) + ".png"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(img_url) as resp:
+                if resp.status != 200:
+                    return await channel.send('Could not download file...')
+                data = io.BytesIO(await resp.read())
+                await channel_lucha.send(msg, file=discord.File(data, 'cool_image.png'))
+        
         
 
 client.run(DISCORD_TOKEN)
