@@ -5,6 +5,7 @@ import json
 
 import discord
 from discord.ext import tasks
+client = discord.Client()
 
 from pycoingecko import CoinGeckoAPI
 cg = CoinGeckoAPI()
@@ -17,21 +18,30 @@ load_dotenv()
 
 
 ###  ENVIRONNEMENT VARIABLES  ###
-DISCORD_TOKEN     =     os.environ.get("DISCORD_TOKEN")
-DISCORD_GUILD     = int(os.environ.get("DISCORD_GUILD"))
-DISCORD_CHANNEL_1 = int(os.environ.get("DISCORD_CHANNEL_1"))
-DISCORD_CHANNEL_2 = int(os.environ.get("DISCORD_CHANNEL_2"))
-OPENSEA_API_KEY   =     os.environ.get("OPENSEA_API_KEY")
-ALCHEMY_API_KEY   =     os.environ.get("ALCHEMY_API_KEY")
+DISCORD_TOKEN         =     os.environ.get("DISCORD_TOKEN")
+DISCORD_GUILD         = int(os.environ.get("DISCORD_GUILD"))
+CHANNEL_GET_DATA      = int(os.environ.get("CHANNEL_GET_DATA"))
+CHANNEL_NEVER_CLAIMED = int(os.environ.get("CHANNEL_NEVER_CLAIMED"))
+CHANNEL_FLOOR         = int(os.environ.get("CHANNEL_FLOOR"))
+CHANNEL_ETH_PRICE     = int(os.environ.get("CHANNEL_ETH_PRICE"))
+CHANNEL_LUCHA_PRICE   = int(os.environ.get("CHANNEL_LUCHA_PRICE"))
+OPENSEA_API_KEY       =     os.environ.get("OPENSEA_API_KEY")
+ALCHEMY_API_KEY       =     os.environ.get("ALCHEMY_API_KEY")
 
 if not "DISCORD_TOKEN" in os.environ:
     exit("ENV VAR DISCORD_TOKEN not defined")
 if not "DISCORD_GUILD" in os.environ:
     exit("ENV VAR DISCORD_GUILD not defined")
-if not "DISCORD_CHANNEL_1" in os.environ:
-    exit("ENV VAR DISCORD_CHANNEL_1 not defined")
-if not "DISCORD_CHANNEL_2" in os.environ:
-    exit("ENV VAR DISCORD_CHANNEL_2 not defined")
+if not "CHANNEL_GET_DATA" in os.environ:
+    exit("ENV VAR CHANNEL_GET_DATA not defined")
+if not "CHANNEL_NEVER_CLAIMED" in os.environ:
+    exit("ENV VAR CHANNEL_NEVER_CLAIMED not defined")
+if not "CHANNEL_FLOOR" in os.environ:
+    exit("ENV VAR CHANNEL_FLOOR not defined")
+if not "CHANNEL_ETH_PRICE" in os.environ:
+    exit("ENV VAR CHANNEL_ETH_PRICE not defined")
+if not "CHANNEL_LUCHA_PRICE" in os.environ:
+    exit("ENV VAR CHANNEL_LUCHA_PRICE not defined")
 if not "OPENSEA_API_KEY" in os.environ:
     exit("ENV VAR OPENSEA_API_KEY not defined")
 if not "ALCHEMY_API_KEY" in os.environ:
@@ -55,10 +65,10 @@ lucha_claim = web3.eth.contract(address=CONTRACT_ADDR_1, abi=luchaABI)
 ###  OPENSEA  ###
 # OpenSea API doc: https://docs.opensea.io/reference/api-overview
 # Luchadores Ethereum contract
-CONTRACT_ADDR_2 = "0x8b4616926705fb61e9c4eeac07cd946a5d4b0760"
-OPENSEA_API_URL = "https://api.opensea.io/api/v1/asset/" + CONTRACT_ADDR_2 + "/"
-OPENSEA_URL     = "https://opensea.io/assets/"           + CONTRACT_ADDR_2 + "/"
-
+CONTRACT_ADDR_2   = "0x8b4616926705fb61e9c4eeac07cd946a5d4b0760"
+OPENSEA_API_URL   = "https://api.opensea.io/api/v1/asset/" + CONTRACT_ADDR_2 + "/"
+OPENSEA_URL       = "https://opensea.io/assets/"           + CONTRACT_ADDR_2 + "/"
+OPENSEA_FLOOR_URL = "https://api.opensea.io/api/v1/collection/luchadores-io/stats"
 
 
 ###  OTHERS  ###
@@ -114,49 +124,63 @@ def handle_request(url):
 
 
 ###  Refresh lucha, eth and floor price  ###
-@tasks.loop(minutes=1)
-async def updateName(guild):
+@tasks.loop(minutes=10)
+async def getFloor():
 
+    channel = client.get_channel(CHANNEL_FLOOR)
+
+    stats_body = handle_request(OPENSEA_FLOOR_URL)
+    if stats_body["code"] != 0:
+        channel.send(stats_body["msg"])
+        return
+
+    floorPrice = stats_body["msg"]['stats']['floor_price']
     
+    name = '『floor』{}♟'.format(round(floorPrice,3)).replace('.','༝')
+    await channel.edit(name=name)
+
+
+
+@tasks.loop(minutes=10)
+async def getEth():
+
+    channel = client.get_channel(CHANNEL_ETH_PRICE)
+
+    ethereum = cg.get_price(ids='ethereum', vs_currencies='usd')
+    ethereum_price = int(ethereum['ethereum']['usd'])
+
+    name = '『ETH』{}💲'.format(ethereum_price)
+    await channel.edit(name=name)
+
+
+
+@tasks.loop(minutes=10)
+async def getLucha():
+
+    channel = client.get_channel(CHANNEL_LUCHA_PRICE)
+
     lucha = cg.get_price(ids='lucha', vs_currencies='usd')
-    lucha_price = str(lucha['lucha']['usd'])
-    print(lucha_price)
-    await guild.me.edit(nick=lucha_price)
-    #print("KEEP ALIVE")
+    lucha_price = lucha['lucha']['usd']
 
-    #guild = client.get_guild(DISCORD_GUILD) # Get the guild in question so you can actually get a member object
-    #converter = MemberConverter()
-    #member = await converter.convert(guild, id) # conver
-    #await member.edit(nick=btc_price)
-    
+    name = '『LUCHA』{}💲'.format(round(lucha_price,3)).replace('.','༝')
+    await channel.edit(name=name)
 
-client = discord.Client()
+
 
 @client.event
 async def on_ready():
 
-    msg="Set up!"
+    getFloor.start()
+    getEth.start()
+    getLucha.start()
 
-
-    updateName.start(client.get_guild(DISCORD_GUILD))
-
-    channel = client.get_channel(DISCORD_CHANNEL_1)
-    #await client.change_presence(activity=discord.Game('Charles'))
-    #await client.change_presence(activity=discord.Streaming(name='Sea of Thieves', url='https://www.twitch.tv/your_channel_here'))
-
-    #guild = client.get_guild(DISCORD_GUILD)
-    #client.guild.me.edit(nick="ok")
-    #await client.user.edit(username="YOLO")
-    await client.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name='Charles :)'))
-    await channel.send(msg)
-    
 
 
 @client.event
 async def on_message(message):
 
-    channel_lucha             = client.get_channel(DISCORD_CHANNEL_1)
-    channel_lucha_not_claimed = client.get_channel(DISCORD_CHANNEL_2)
+    channel_get_data      = client.get_channel(CHANNEL_GET_DATA)
+    channel_never_claimed = client.get_channel(CHANNEL_NEVER_CLAIMED)
 
     # If the bot send a msg, do nothing
     if message.author == client.user:
@@ -164,10 +188,10 @@ async def on_message(message):
     
 
     # Check how many lucha have been claimed out of 10k
-    if message.channel == channel_lucha_not_claimed:
+    if message.channel == channel_never_claimed:
 
         msg = "Fetching data, plz wait, it can take up to 1h..."
-        await channel_lucha_not_claimed.send(msg)
+        await channel_never_claimed.send(msg)
         
         not_claimed = []
         counter = 0
@@ -181,24 +205,24 @@ async def on_message(message):
 
             if counter == 10:
                 counter = 0
-                await channel_lucha_not_claimed.send(not_claimed[-10:])
-        await channel_lucha_not_claimed.send(not_claimed[-counter:])    
+                await channel_never_claimed.send(not_claimed[-10:])
+        await channel_never_claimed.send(not_claimed[-counter:])    
 
         msg = "Total not claimed on 10k lucha: "
         msg += str(len(not_claimed))
-        await channel_lucha_not_claimed.send(msg)
+        await channel_never_claimed.send(msg)
 
 
     # fetch opensea data on a specific lucha
-    elif message.channel == channel_lucha:
+    elif message.channel == channel_get_data:
 
         try:
             num = int(message.content)
         except ValueError:
-            await channel_lucha.send("Type an integer")
+            await channel_get_data.send("Type an integer")
             return
         if(num <= 0 or num > 10000):
-            await channel_lucha.send("Type an integer between 1 and 10 000")
+            await channel_get_data.send("Type an integer between 1 and 10 000")
             return
         
 
@@ -206,14 +230,14 @@ async def on_message(message):
         listing_body = handle_request(listing_url)
 
         if listing_body["code"] != 0:
-            channel_lucha.send(listing_body["msg"])
+            channel_get_data.send(listing_body["msg"])
             return
 
         asset_url  = OPENSEA_API_URL + message.content
         asset_body = handle_request(asset_url)
 
         if asset_body["code"] != 0:
-            channel_lucha.send(asset_body["msg"])
+            channel_get_data.send(asset_body["msg"])
             return
 
 
@@ -241,7 +265,7 @@ async def on_message(message):
             roi = int(realPrice / (luchaYield * lucha_price))
 
         elif len(listings) > 1:
-            channel_lucha.send("alerte > 1 listing! plz check")
+            channel_get_data.send("alerte > 1 listing! plz check")
       
 
         # send data back in discord
@@ -282,7 +306,7 @@ async def on_message(message):
                             inline = True)
 
 
-        await channel_lucha.send(embed=embed)
+        await channel_get_data.send(embed=embed)
         
         
 
