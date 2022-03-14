@@ -136,7 +136,8 @@ def handle_request(url, params = {}):
 def create_embed(type,
                  data,
                  price,
-                 seller):
+                 seller,
+                 buyer=NULL):
 
     tokenId = data["token_id"]
     traits = data['traits'][-1]['value']
@@ -187,6 +188,10 @@ def create_embed(type,
         embed.add_field(name   = "Seller",
                         value  = seller,
                         inline = True)
+        if buyer:
+            embed.add_field(name   = "Buyer",
+                            value  = buyer,
+                            inline = True)
         embed.add_field(name   = "Real $ price",
                         value  = int(realPrice),
                         inline = True)
@@ -245,7 +250,7 @@ async def getLucha():
 
 
 last_event_id = 0
-@tasks.loop(seconds=15)
+@tasks.loop(minutes=1)
 async def getLastEvents():
 
     global last_event_id
@@ -275,7 +280,8 @@ async def getLastEvents():
         # sale
         if event["event_type"] == "successful":
 
-            seller = event["seller"]["user"]["username"]
+            seller = event["seller"]["user"]["username"] if event["seller"]["user"]["username"] else "Unnamed"
+            buyer = event["winner_account"]["user"]["username"] if event["winner_account"]["user"]["username"] else "Unnamed"
             price = int(event["total_price"]) / (10**18)
 
             # bundle
@@ -295,7 +301,8 @@ async def getLastEvents():
                     embed = create_embed("sold (bundle)",
                                         asset_body["msg"],
                                         price,
-                                        seller)
+                                        seller,
+                                        buyer)
 
                     sales += [embed]
 
@@ -314,14 +321,15 @@ async def getLastEvents():
                 embed = create_embed("sold",
                                     asset_body["msg"],
                                     price,
-                                    seller)
+                                    seller,
+                                    buyer)
 
                 sales += [embed]
 
         # listing
         elif event["event_type"] == "created":
 
-            seller = event["seller"]["user"]["username"] if event["seller"]["user"] else "null"
+            seller = event["seller"]["user"]["username"] if event["seller"]["user"] else "Unnamed"
             price = int(event["ending_price"]) / (10**18)
 
             # bundle
