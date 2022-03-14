@@ -129,6 +129,44 @@ def handle_request(url):
 
 
 
+def create_embed(type,
+                 tokenId,
+                 traits,
+                 pendingYield,
+                 claimed,
+                 price,
+                 seller):
+
+    # send data back in discord
+    img_url = LUCHADORES_IMG_URL + tokenId + ".png"
+
+    embed = discord.Embed(title = "Luchadores {} {}".format(tokenId, type),
+                            url   = OPENSEA_URL+str(tokenId),
+                            color = discord.Color.from_rgb(255,0,0))
+    embed.set_thumbnail(url = img_url)
+    embed.add_field(name    = "Attributes",
+                    value   = traits,
+                    inline  = True)
+    embed.add_field(name    = "Daily yield",
+                    value   = lyield[traits],
+                    inline  = True)
+    embed.add_field(name    = "Price",
+                    value   = price,
+                    inline  = True)
+    embed.add_field(name    = "Seller",
+                    value   = seller,
+                    inline  = True)
+    embed.add_field(name    = "Pending $lucha",
+                    value   = int(pendingYield),
+                    inline  = True)
+    embed.add_field(name    = "Claimed Once",
+                    value   = claimed,
+                    inline  = True)
+
+    return embed
+
+
+
 ###  Refresh lucha, eth and floor price  ###
 @tasks.loop(minutes=10)
 async def getFloor():
@@ -202,106 +240,137 @@ async def getLastEvents():
         # sale
         if event["event_type"] == "successful":
 
-            tokenId = event["asset"]["token_id"]
             seller = event["seller"]["user"]["username"]
             price = int(event["total_price"]) / (10**18)
 
-            asset_url  = OPENSEA_API_URL + tokenId
-            asset_body = handle_request(asset_url)
+            # bundle
+            if event["asset_bundle"]:
 
-            if asset_body["code"] != 0:
-                channel_sales.send(asset_body["msg"])
-                return
+                for asset in event["asset_bundle"]["assets"]:
+                    
+                    tokenId = asset["token_id"]
+                
+                    asset_url  = OPENSEA_API_URL + tokenId
+                    asset_body = handle_request(asset_url)
+
+                    if asset_body["code"] != 0:
+                        channel_sales.send(asset_body["msg"])
+                        return
 
 
-            traits = asset_body["msg"]['traits'][-1]['value']
-            luchaYield = lyield[traits]
+                    traits = asset_body["msg"]['traits'][-1]['value']
 
-            hasBeenClaimed = lucha_claim.functions.lastClaim(int(tokenId)).call()
-            pendingYield   = lucha_claim.functions.pendingYield(int(tokenId)).call() / (10**18)
-        
-            claimed = True if hasBeenClaimed else False
+                    hasBeenClaimed = lucha_claim.functions.lastClaim(int(tokenId)).call()
+                    pendingYield   = lucha_claim.functions.pendingYield(int(tokenId)).call() / (10**18)
+                
+                    claimed = True if hasBeenClaimed else False
 
-            # send data back in discord
-            img_url = LUCHADORES_IMG_URL + tokenId + ".png"
+                    embed = create_embed("sold (bundle)",
+                                        tokenId,
+                                        traits,
+                                        pendingYield,
+                                        claimed,
+                                        price,
+                                        seller)
 
-            embed = discord.Embed(title = "Luchadores {} sold".format(tokenId),
-                                    url   = OPENSEA_URL+str(tokenId),
-                                    color = discord.Color.from_rgb(255,0,0),
-                                    description = eventId)
-            embed.set_thumbnail(url = img_url)
-            embed.add_field(name    = "Attributes",
-                            value   = traits,
-                            inline  = True)
-            embed.add_field(name    = "Daily yield",
-                            value   = luchaYield,
-                            inline  = True)
-            embed.add_field(name    = "Sale price",
-                            value   = price,
-                            inline  = True)
-            embed.add_field(name    = "Seller",
-                            value   = seller,
-                            inline  = True)
-            embed.add_field(name    = "Pending $lucha",
-                            value   = int(pendingYield),
-                            inline  = True)
-            embed.add_field(name    = "Claimed Once",
-                            value   = claimed,
-                            inline  = True)
+                    sales += [embed]
 
-            sales += [embed]
+            # single asset
+            elif event["asset"]:
+
+                tokenId = event["asset"]["token_id"]
+
+                asset_url  = OPENSEA_API_URL + tokenId
+                asset_body = handle_request(asset_url)
+
+                if asset_body["code"] != 0:
+                    channel_sales.send(asset_body["msg"])
+                    return
+
+
+                traits = asset_body["msg"]['traits'][-1]['value']
+
+                hasBeenClaimed = lucha_claim.functions.lastClaim(int(tokenId)).call()
+                pendingYield   = lucha_claim.functions.pendingYield(int(tokenId)).call() / (10**18)
+            
+                claimed = True if hasBeenClaimed else False
+
+                embed = create_embed("sold",
+                                    tokenId,
+                                    traits,
+                                    pendingYield,
+                                    claimed,
+                                    price,
+                                    seller)
+
+                sales += [embed]
 
         # listing
         elif event["event_type"] == "created":
 
-            tokenId = event["asset"]["token_id"]
-            seller = event["seller"]["user"]["username"]
+            seller = event["seller"]["user"]["username"] if event["seller"]["user"] else "null"
             price = int(event["ending_price"]) / (10**18)
 
-            asset_url  = OPENSEA_API_URL + tokenId
-            asset_body = handle_request(asset_url)
+            # bundle
+            if event["asset_bundle"]:
 
-            if asset_body["code"] != 0:
-                channel_sales.send(asset_body["msg"])
-                return
+                for asset in event["asset_bundle"]["assets"]:
+                    tokenId = asset["token_id"]
+                
+                    asset_url  = OPENSEA_API_URL + tokenId
+                    asset_body = handle_request(asset_url)
+
+                    if asset_body["code"] != 0:
+                        channel_sales.send(asset_body["msg"])
+                        return
 
 
-            traits = asset_body["msg"]['traits'][-1]['value']
-            luchaYield = lyield[traits]
+                    traits = asset_body["msg"]['traits'][-1]['value']
 
-            hasBeenClaimed = lucha_claim.functions.lastClaim(int(tokenId)).call()
-            pendingYield   = lucha_claim.functions.pendingYield(int(tokenId)).call() / (10**18)
-        
-            claimed = True if hasBeenClaimed else False
+                    hasBeenClaimed = lucha_claim.functions.lastClaim(int(tokenId)).call()
+                    pendingYield   = lucha_claim.functions.pendingYield(int(tokenId)).call() / (10**18)
+                
+                    claimed = True if hasBeenClaimed else False
 
-            # send data back in discord
-            img_url = LUCHADORES_IMG_URL + tokenId + ".png"
+                    embed = create_embed("listed (bundle)",
+                                        tokenId,
+                                        traits,
+                                        pendingYield,
+                                        claimed,
+                                        price,
+                                        seller)
 
-            embed = discord.Embed(title = "Luchadores {} listed".format(tokenId),
-                                    url   = OPENSEA_URL+str(tokenId),
-                                    color = discord.Color.from_rgb(255,0,0),
-                                    description = eventId)
-            embed.set_thumbnail(url = img_url)
-            embed.add_field(name    = "Attributes",
-                            value   = traits,
-                            inline  = True)
-            embed.add_field(name    = "Daily yield",
-                            value   = luchaYield,
-                            inline  = True)
-            embed.add_field(name    = "Listing price",
-                            value   = price,
-                            inline  = True)
-            embed.add_field(name    = "Seller",
-                            value   = seller,
-                            inline  = True)
-            embed.add_field(name    = "Pending $lucha",
-                            value   = int(pendingYield),
-                            inline  = True)
-            embed.add_field(name    = "Claimed Once",
-                            value   = claimed,
-                            inline  = True)
+                    listings += [embed]
 
-            listings += [embed]
+            # single asset
+            elif event["asset"]:
+
+                tokenId = event["asset"]["token_id"]
+                
+                asset_url  = OPENSEA_API_URL + tokenId
+                asset_body = handle_request(asset_url)
+
+                if asset_body["code"] != 0:
+                    channel_sales.send(asset_body["msg"])
+                    return
+
+
+                traits = asset_body["msg"]['traits'][-1]['value']
+
+                hasBeenClaimed = lucha_claim.functions.lastClaim(int(tokenId)).call()
+                pendingYield   = lucha_claim.functions.pendingYield(int(tokenId)).call() / (10**18)
+            
+                claimed = True if hasBeenClaimed else False
+
+                embed = create_embed("listed",
+                                    tokenId,
+                                    traits,
+                                    pendingYield,
+                                    claimed,
+                                    price,
+                                    seller)
+
+                listings += [embed]
 
     last_event_id = int(response["asset_events"][0]["id"])
     for msg in reversed(sales):

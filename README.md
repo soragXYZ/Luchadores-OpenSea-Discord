@@ -21,4 +21,3 @@ TO DO
 
 Clear format for URL
 Add seller/ buyer
-Deal with bundles
