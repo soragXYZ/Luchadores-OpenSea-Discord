@@ -1,4 +1,6 @@
 ###  IMPORTS  ###
+from asyncio.windows_events import NULL
+from logging import NullHandler
 import os
 import requests
 import json
@@ -132,16 +134,21 @@ def handle_request(url, params = {}):
 
 
 def create_embed(type,
-                 tokenId,
-                 traits,
-                 pendingYield,
-                 claimed,
+                 data,
                  price,
                  seller):
 
-    # send data back in discord
+    tokenId = data["token_id"]
+    traits = data['traits'][-1]['value']
+
+    hasBeenClaimed = lucha_claim.functions.lastClaim(int(tokenId)).call()
+    claimed = True if hasBeenClaimed else False
+
+    pendingYield   = lucha_claim.functions.pendingYield(int(tokenId)).call() / (10**18)
+
     img_url  = "{}/{}.png".format(LUCHADORES_IMG_URL, tokenId)
     url = "{}/assets/{}/{}".format(OS_URL, CONTRACT_ADDR_2, tokenId)
+
 
     embed = discord.Embed(title = "Luchadores {} {}".format(tokenId, type),
                           url   = url,
@@ -153,18 +160,39 @@ def create_embed(type,
     embed.add_field(name    = "Daily yield",
                     value   = lyield[traits],
                     inline  = True)
-    embed.add_field(name    = "Price",
-                    value   = price,
-                    inline  = True)
-    embed.add_field(name    = "Seller",
-                    value   = seller,
-                    inline  = True)
     embed.add_field(name    = "Pending $lucha",
                     value   = int(pendingYield),
                     inline  = True)
     embed.add_field(name    = "Claimed Once",
                     value   = claimed,
                     inline  = True)
+
+
+    if price:
+
+        lucha = cg.get_price(ids='lucha', vs_currencies='usd')
+        lucha_price = lucha['lucha']['usd']
+        ethereum = cg.get_price(ids='ethereum', vs_currencies='usd')
+        ethereum_price = ethereum['ethereum']['usd']
+
+        fiat_price = price * ethereum_price
+        
+        # $ price with $lucha token deducted
+        realPrice = fiat_price - pendingYield * lucha_price
+        roi = int(realPrice / (lyield[traits] * lucha_price))
+
+        embed.add_field(name   = "ETH Price",
+                        value  = price,
+                        inline = True)
+        embed.add_field(name   = "Seller",
+                        value  = seller,
+                        inline = True)
+        embed.add_field(name   = "Real $ price",
+                        value  = int(realPrice),
+                        inline = True)
+        embed.add_field(name   = "ROI in days",
+                        value  = roi,
+                        inline = True)
 
     return embed
 
@@ -217,7 +245,7 @@ async def getLucha():
 
 
 last_event_id = 0
-@tasks.loop(minutes=5)
+@tasks.loop(seconds=15)
 async def getLastEvents():
 
     global last_event_id
@@ -264,19 +292,8 @@ async def getLastEvents():
                         await channel_sales.send(asset_body["msg"])
                         return
 
-
-                    traits = asset_body["msg"]['traits'][-1]['value']
-
-                    hasBeenClaimed = lucha_claim.functions.lastClaim(int(tokenId)).call()
-                    pendingYield   = lucha_claim.functions.pendingYield(int(tokenId)).call() / (10**18)
-                
-                    claimed = True if hasBeenClaimed else False
-
                     embed = create_embed("sold (bundle)",
-                                        tokenId,
-                                        traits,
-                                        pendingYield,
-                                        claimed,
+                                        asset_body["msg"],
                                         price,
                                         seller)
 
@@ -294,19 +311,8 @@ async def getLastEvents():
                     await channel_sales.send(asset_body["msg"])
                     return
 
-
-                traits = asset_body["msg"]['traits'][-1]['value']
-
-                hasBeenClaimed = lucha_claim.functions.lastClaim(int(tokenId)).call()
-                pendingYield   = lucha_claim.functions.pendingYield(int(tokenId)).call() / (10**18)
-            
-                claimed = True if hasBeenClaimed else False
-
                 embed = create_embed("sold",
-                                    tokenId,
-                                    traits,
-                                    pendingYield,
-                                    claimed,
+                                    asset_body["msg"],
                                     price,
                                     seller)
 
@@ -331,19 +337,8 @@ async def getLastEvents():
                         await channel_sales.send(asset_body["msg"])
                         return
 
-
-                    traits = asset_body["msg"]['traits'][-1]['value']
-
-                    hasBeenClaimed = lucha_claim.functions.lastClaim(int(tokenId)).call()
-                    pendingYield   = lucha_claim.functions.pendingYield(int(tokenId)).call() / (10**18)
-                
-                    claimed = True if hasBeenClaimed else False
-
                     embed = create_embed("listed (bundle)",
-                                        tokenId,
-                                        traits,
-                                        pendingYield,
-                                        claimed,
+                                        asset_body["msg"],
                                         price,
                                         seller)
 
@@ -361,19 +356,8 @@ async def getLastEvents():
                     await channel_sales.send(asset_body["msg"])
                     return
 
-
-                traits = asset_body["msg"]['traits'][-1]['value']
-
-                hasBeenClaimed = lucha_claim.functions.lastClaim(int(tokenId)).call()
-                pendingYield   = lucha_claim.functions.pendingYield(int(tokenId)).call() / (10**18)
-            
-                claimed = True if hasBeenClaimed else False
-
                 embed = create_embed("listed",
-                                    tokenId,
-                                    traits,
-                                    pendingYield,
-                                    claimed,
+                                    asset_body["msg"],
                                     price,
                                     seller)
 
@@ -463,66 +447,26 @@ async def on_message(message):
             return
 
 
-        traits = asset_body["msg"]['traits'][-1]['value']
-        luchaYield = lyield[traits]
-        hasBeenClaimed = lucha_claim.functions.lastClaim(tokenId).call()
-        claimed = True if hasBeenClaimed else False
-        pendingYield = lucha_claim.functions.pendingYield(tokenId).call() / (10**18)
+        listingPrice = 0
+        seller = NULL
 
         listings = listing_body["msg"]["listings"]
 
         # if the lucha is listed on sale
         if listings:
 
-            lucha = cg.get_price(ids='lucha', vs_currencies='usd')
-            lucha_price = lucha['lucha']['usd']
-            ethereum = cg.get_price(ids='ethereum', vs_currencies='usd')
-            ethereum_price = ethereum['ethereum']['usd']
-
-            # eth price, then $ price
             listingPrices = []
             for price in listings:
                 listingPrices += [price["current_price"]]
 
             listingPrice = float(min(listingPrices)) / (10**18)
-            price = listingPrice * ethereum_price
-            
-            # $ price with $lucha token deducted
-            realPrice = price - pendingYield * lucha_price
-            roi = int(realPrice / (luchaYield * lucha_price))
+            seller = listings[0]["maker"]["user"]["username"]
 
-        # send data back in discord
-        img_url  = "{}/{}.png".format(LUCHADORES_IMG_URL, tokenId)
-        url = "{}/assets/{}/{}".format(OS_URL, CONTRACT_ADDR_2, tokenId)
 
-        embed = discord.Embed(title = "Luchadores {}".format(tokenId),
-                              url   = url,
-                              color = discord.Color.from_rgb(255,0,0))
-        embed.set_thumbnail(url = img_url)
-        embed.add_field(name   = "Attributes",
-                        value  = traits,
-                        inline = True)
-        embed.add_field(name   = "Daily yield",
-                        value  = luchaYield,
-                        inline = True)
-        embed.add_field(name   = "Pending $lucha",
-                        value  = int(pendingYield),
-                        inline = True)
-        embed.add_field(name   = "Claimed Once",
-                        value  = claimed,
-                        inline = True)
-
-        if listings:
-            embed.add_field(name   = "ROI in days",
-                            value  = roi,
-                            inline = True)
-            embed.add_field(name   = "ETH Price",
-                            value  = listingPrice,
-                            inline = True)
-            embed.add_field(name   = "Real $ price",
-                            value  = int(realPrice),
-                            inline = True)
-
+        embed = create_embed("checked",
+                            asset_body["msg"],
+                            listingPrice,
+                            seller)
 
         await channel_get_data.send(embed=embed)
         
