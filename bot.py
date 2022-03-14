@@ -94,11 +94,13 @@ LUCHADORES_IMG_URL = "https://luchadores-io.s3.us-east-2.amazonaws.com/img/"
 
 
 ###  Send get requests to opensea API  ###
-def handle_request(url):
+def handle_request(url, params = {}):
+
     try:
         response = requests.get(
             url,
-            headers = {"Accept": "application/json","X-API-KEY": OPENSEA_API_KEY}
+            headers = {"Accept": "application/json","X-API-KEY": OPENSEA_API_KEY},
+            params = params
         )
         response.raise_for_status()
 
@@ -211,7 +213,6 @@ async def getLucha():
 
 
 
-
 last_event_id = 0
 # ======================================================================
 @tasks.loop(seconds=10)
@@ -224,13 +225,17 @@ async def getLastEvents():
     
     url = "https://api.opensea.io/api/v1/events"
     params = {'asset_contract_address':CONTRACT_ADDR_2}
-    response = requests.request("GET", url, headers={"Accept": "application/json","X-API-KEY": OPENSEA_API_KEY}, params=params)
-    response = response.json()
+    
+    events_body = handle_request(url, params)
+
+    if events_body["code"] != 0:
+        channel_sales.send(events_body["msg"])
+        return
     
     listings = []
     sales    = []
 
-    for event in response["asset_events"]:
+    for event in events_body["msg"]["asset_events"]:
 
         # break when eventId = the last eventId treated from the last API call
         eventId = int(event["id"])
@@ -372,23 +377,11 @@ async def getLastEvents():
 
                 listings += [embed]
 
-    last_event_id = int(response["asset_events"][0]["id"])
+    last_event_id = int(events_body["msg"]["asset_events"][0]["id"])
     for msg in reversed(sales):
         await channel_sales.send(embed=msg)
     for msg in reversed(listings):
         await channel_listings.send(embed=msg)
-                
-
-
-            
-            
-
-
-
-    
-
-    
-# ======================================================================
 
 
 
@@ -398,7 +391,7 @@ async def on_ready():
     #getFloor.start()
     #getEth.start()
     #getLucha.start()
-    getLastEvents.start()
+    #getLastEvents.start()
     print("ok")
 
 
@@ -471,12 +464,13 @@ async def on_message(message):
         traits = asset_body["msg"]['traits'][-1]['value']
         luchaYield = lyield[traits]
         hasBeenClaimed = lucha_claim.functions.lastClaim(num).call()
+        claimed = True if hasBeenClaimed else False
         pendingYield = lucha_claim.functions.pendingYield(num).call() / (10**18)
 
         listings = listing_body["msg"]["listings"]
 
         # if the lucha is listed on sale
-        if len(listings) == 1:
+        if listings:
 
             lucha = cg.get_price(ids='lucha', vs_currencies='usd')
             lucha_price = lucha['lucha']['usd']
@@ -484,16 +478,16 @@ async def on_message(message):
             ethereum_price = ethereum['ethereum']['usd']
 
             # eth price, then $ price
-            listingPrice = float(listings[0]["current_price"]) / (10**18)
+            listingPrices = []
+            for price in listings:
+                listingPrices += [price["current_price"]]
+
+            listingPrice = float(min(listingPrices)) / (10**18)
             price = listingPrice * ethereum_price
             
             # $ price with $lucha token deducted
             realPrice = price - pendingYield * lucha_price
             roi = int(realPrice / (luchaYield * lucha_price))
-
-        elif len(listings) > 1:
-            channel_get_data.send("alerte > 1 listing! plz check")
-      
 
         # send data back in discord
         img_url = LUCHADORES_IMG_URL + str(num) + ".png"
@@ -511,17 +505,11 @@ async def on_message(message):
         embed.add_field(name   = "Pending $lucha",
                         value  = int(pendingYield),
                         inline = True)
+        embed.add_field(name   = "Claimed Once",
+                        value  = claimed,
+                        inline = True)
 
-        if hasBeenClaimed:
-            embed.add_field(name   = "Never claimed",
-                            value  = "No",
-                            inline = True)
-        else:
-            embed.add_field(name   = "Never claimed",
-                            value  = "Yes",
-                            inline = True)
-
-        if len(listings) == 1:
+        if listings:
             embed.add_field(name   = "ROI in days",
                             value  = roi,
                             inline = True)
