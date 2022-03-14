@@ -19,5 +19,4 @@ https://docs.opensea.io/reference/event-object
 
 TO DO
 
-Clear format for URL
 Add seller/ buyer

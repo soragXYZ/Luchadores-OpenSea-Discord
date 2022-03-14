@@ -56,28 +56,26 @@ if not "ALCHEMY_API_KEY" in os.environ:
 
 
 ###  RPC AND CONTRACT ABI  ###
-RPC_URL = "https://polygon-mainnet.g.alchemy.com/v2/"
-web3 = Web3(Web3.HTTPProvider(RPC_URL+ALCHEMY_API_KEY))
+ALCHEMY_URL = "https://polygon-mainnet.g.alchemy.com/v2"
+RPC_URL = "{}/{}".format(ALCHEMY_URL, ALCHEMY_API_KEY)
+web3 = Web3(Web3.HTTPProvider(RPC_URL))
 
 with open("./luchaABI.txt", "r") as file:
     luchaABI = json.load(file)
 
 # Luchadores Polygon contract
 CONTRACT_ADDR_1 = "0xE8B73c064BD3B8c5DB438118543ACd6AAb18F108"
+# Luchadores Ethereum contract
+CONTRACT_ADDR_2 = "0x8b4616926705fb61e9c4eeac07cd946a5d4b0760"
 lucha_claim = web3.eth.contract(address=CONTRACT_ADDR_1, abi=luchaABI)
 
 
 
-###  OPENSEA  ###
-# OpenSea API doc: https://docs.opensea.io/reference/api-overview
-# Luchadores Ethereum contract
-CONTRACT_ADDR_2   = "0x8b4616926705fb61e9c4eeac07cd946a5d4b0760"
-OPENSEA_API_URL   = "https://api.opensea.io/api/v1/asset/" + CONTRACT_ADDR_2 + "/"
-OPENSEA_URL       = "https://opensea.io/assets/"           + CONTRACT_ADDR_2 + "/"
-OPENSEA_FLOOR_URL = "https://api.opensea.io/api/v1/collection/luchadores-io/stats"
-
-
 ###  OTHERS  ###
+# OpenSea API doc: https://docs.opensea.io/reference/api-overview
+OS_API_URL = "https://api.opensea.io/api/v1"
+OS_URL     = "https://opensea.io"
+
 # $LUCHA yield, based on attribute rarity: https://luchadores.io/yield
 lyield = {
     3:1,
@@ -89,7 +87,8 @@ lyield = {
     0:6,
     7:10
 }
-LUCHADORES_IMG_URL = "https://luchadores-io.s3.us-east-2.amazonaws.com/img/"
+COLLECTION_SLUG = "luchadores-io"
+LUCHADORES_IMG_URL = "https://luchadores-io.s3.us-east-2.amazonaws.com/img"
 
 
 
@@ -99,7 +98,8 @@ def handle_request(url, params = {}):
     try:
         response = requests.get(
             url,
-            headers = {"Accept": "application/json","X-API-KEY": OPENSEA_API_KEY},
+            headers = {"Accept": "application/json",
+                       "X-API-KEY": OPENSEA_API_KEY},
             params = params
         )
         response.raise_for_status()
@@ -140,11 +140,12 @@ def create_embed(type,
                  seller):
 
     # send data back in discord
-    img_url = LUCHADORES_IMG_URL + tokenId + ".png"
+    img_url  = "{}/{}.png".format(LUCHADORES_IMG_URL, tokenId)
+    url = "{}/assets/{}/{}".format(OS_URL, CONTRACT_ADDR_2, tokenId)
 
     embed = discord.Embed(title = "Luchadores {} {}".format(tokenId, type),
-                            url   = OPENSEA_URL+str(tokenId),
-                            color = discord.Color.from_rgb(255,0,0))
+                          url   = url,
+                          color = discord.Color.from_rgb(255,0,0))
     embed.set_thumbnail(url = img_url)
     embed.add_field(name    = "Attributes",
                     value   = traits,
@@ -175,9 +176,11 @@ async def getFloor():
 
     channel = client.get_channel(CHANNEL_FLOOR)
 
-    stats_body = handle_request(OPENSEA_FLOOR_URL)
+    
+    stats_url = "{}/collection/{}/stats".format(OS_API_URL, COLLECTION_SLUG)
+    stats_body = handle_request(stats_url)
     if stats_body["code"] != 0:
-        channel.send(stats_body["msg"])
+        await channel.send(stats_body["msg"])
         return
 
     floorPrice = stats_body["msg"]['stats']['floor_price']
@@ -214,8 +217,7 @@ async def getLucha():
 
 
 last_event_id = 0
-# ======================================================================
-@tasks.loop(seconds=10)
+@tasks.loop(minutes=5)
 async def getLastEvents():
 
     global last_event_id
@@ -223,13 +225,13 @@ async def getLastEvents():
     channel_listings = client.get_channel(CHANNEL_LISTINGS)
     channel_sales    = client.get_channel(CHANNEL_SALES)
     
-    url = "https://api.opensea.io/api/v1/events"
-    params = {'asset_contract_address':CONTRACT_ADDR_2}
+    params = {'asset_contract_address': CONTRACT_ADDR_2}
     
-    events_body = handle_request(url, params)
+    events_url = "{}/events".format(OS_API_URL)
+    events_body = handle_request(events_url, params)
 
     if events_body["code"] != 0:
-        channel_sales.send(events_body["msg"])
+        await channel_sales.send(events_body["msg"])
         return
     
     listings = []
@@ -255,11 +257,11 @@ async def getLastEvents():
                     
                     tokenId = asset["token_id"]
                 
-                    asset_url  = OPENSEA_API_URL + tokenId
+                    asset_url = "{}/asset/{}/{}".format(OS_API_URL,CONTRACT_ADDR_2, tokenId)
                     asset_body = handle_request(asset_url)
 
                     if asset_body["code"] != 0:
-                        channel_sales.send(asset_body["msg"])
+                        await channel_sales.send(asset_body["msg"])
                         return
 
 
@@ -285,11 +287,11 @@ async def getLastEvents():
 
                 tokenId = event["asset"]["token_id"]
 
-                asset_url  = OPENSEA_API_URL + tokenId
+                asset_url = "{}/asset/{}/{}".format(OS_API_URL,CONTRACT_ADDR_2, tokenId)
                 asset_body = handle_request(asset_url)
 
                 if asset_body["code"] != 0:
-                    channel_sales.send(asset_body["msg"])
+                    await channel_sales.send(asset_body["msg"])
                     return
 
 
@@ -322,11 +324,11 @@ async def getLastEvents():
                 for asset in event["asset_bundle"]["assets"]:
                     tokenId = asset["token_id"]
                 
-                    asset_url  = OPENSEA_API_URL + tokenId
+                    asset_url = "{}/asset/{}/{}".format(OS_API_URL,CONTRACT_ADDR_2, tokenId)
                     asset_body = handle_request(asset_url)
 
                     if asset_body["code"] != 0:
-                        channel_sales.send(asset_body["msg"])
+                        await channel_sales.send(asset_body["msg"])
                         return
 
 
@@ -352,11 +354,11 @@ async def getLastEvents():
 
                 tokenId = event["asset"]["token_id"]
                 
-                asset_url  = OPENSEA_API_URL + tokenId
+                asset_url = "{}/asset/{}/{}".format(OS_API_URL,CONTRACT_ADDR_2, tokenId)
                 asset_body = handle_request(asset_url)
 
                 if asset_body["code"] != 0:
-                    channel_sales.send(asset_body["msg"])
+                    await channel_sales.send(asset_body["msg"])
                     return
 
 
@@ -388,10 +390,10 @@ async def getLastEvents():
 @client.event
 async def on_ready():
 
-    #getFloor.start()
-    #getEth.start()
-    #getLucha.start()
-    #getLastEvents.start()
+    getFloor.start()
+    getEth.start()
+    getLucha.start()
+    getLastEvents.start()
     print("ok")
 
 
@@ -437,35 +439,35 @@ async def on_message(message):
     elif message.channel == channel_get_data:
 
         try:
-            num = int(message.content)
+            tokenId = int(message.content)
         except ValueError:
             await channel_get_data.send("Type an integer")
             return
-        if(num <= 0 or num > 10000):
+        if(tokenId <= 0 or tokenId > 10000):
             await channel_get_data.send("Type an integer between 1 and 10 000")
             return
         
 
-        listing_url  = OPENSEA_API_URL + message.content + "/listings"
+        listing_url = "{}/asset/{}/{}/listings".format(OS_API_URL,CONTRACT_ADDR_2, tokenId)
         listing_body = handle_request(listing_url)
 
         if listing_body["code"] != 0:
-            channel_get_data.send(listing_body["msg"])
+            await channel_get_data.send(listing_body["msg"])
             return
 
-        asset_url  = OPENSEA_API_URL + message.content
+        asset_url = "{}/asset/{}/{}".format(OS_API_URL,CONTRACT_ADDR_2, tokenId)
         asset_body = handle_request(asset_url)
 
         if asset_body["code"] != 0:
-            channel_get_data.send(asset_body["msg"])
+            await channel_get_data.send(asset_body["msg"])
             return
 
 
         traits = asset_body["msg"]['traits'][-1]['value']
         luchaYield = lyield[traits]
-        hasBeenClaimed = lucha_claim.functions.lastClaim(num).call()
+        hasBeenClaimed = lucha_claim.functions.lastClaim(tokenId).call()
         claimed = True if hasBeenClaimed else False
-        pendingYield = lucha_claim.functions.pendingYield(num).call() / (10**18)
+        pendingYield = lucha_claim.functions.pendingYield(tokenId).call() / (10**18)
 
         listings = listing_body["msg"]["listings"]
 
@@ -490,10 +492,11 @@ async def on_message(message):
             roi = int(realPrice / (luchaYield * lucha_price))
 
         # send data back in discord
-        img_url = LUCHADORES_IMG_URL + str(num) + ".png"
+        img_url  = "{}/{}.png".format(LUCHADORES_IMG_URL, tokenId)
+        url = "{}/assets/{}/{}".format(OS_URL, CONTRACT_ADDR_2, tokenId)
 
-        embed = discord.Embed(title = "Luchadores {}".format(num),
-                              url   = OPENSEA_URL+str(num),
+        embed = discord.Embed(title = "Luchadores {}".format(tokenId),
+                              url   = url,
                               color = discord.Color.from_rgb(255,0,0))
         embed.set_thumbnail(url = img_url)
         embed.add_field(name   = "Attributes",
