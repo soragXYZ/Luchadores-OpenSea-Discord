@@ -1,6 +1,4 @@
 ###  IMPORTS  ###
-from asyncio.windows_events import NULL
-from logging import NullHandler
 import os
 import requests
 import json
@@ -58,9 +56,10 @@ if not "ALCHEMY_API_KEY" in os.environ:
 
 
 ###  RPC AND CONTRACT ABI  ###
-ALCHEMY_URL = "https://polygon-mainnet.g.alchemy.com/v2"
-RPC_URL = "{}/{}".format(ALCHEMY_URL, ALCHEMY_API_KEY)
-web3 = Web3(Web3.HTTPProvider(RPC_URL))
+ALCHEMY_WS = "wss://polygon-mainnet.g.alchemy.com/v2"
+
+RPC_URL = "{}/{}".format(ALCHEMY_WS, ALCHEMY_API_KEY)
+web3 = Web3(Web3.WebsocketProvider(RPC_URL, websocket_timeout=20))
 
 with open("./luchaABI.txt", "r") as file:
     luchaABI = json.load(file)
@@ -137,7 +136,7 @@ def create_embed(type,
                  data,
                  price,
                  seller,
-                 buyer=NULL):
+                 buyer=0):
 
     tokenId = data["token_id"]
     traits = data['traits'][-1]['value']
@@ -382,11 +381,17 @@ async def getLastEvents():
 @client.event
 async def on_ready():
 
-    getFloor.start()
-    getEth.start()
-    getLucha.start()
-    getLastEvents.start()
-    print("ok")
+    if not getFloor.is_running():
+        getFloor.start()
+
+    if not getEth.is_running():
+        getEth.start()
+    
+    if not getLucha.is_running():
+        getLucha.start()
+    
+    if not getLastEvents.is_running():
+        getLastEvents.start()
 
 
 
@@ -456,7 +461,7 @@ async def on_message(message):
 
 
         listingPrice = 0
-        seller = NULL
+        seller = 0
 
         listings = listing_body["msg"]["listings"]
 
@@ -469,6 +474,7 @@ async def on_message(message):
 
             listingPrice = float(min(listingPrices)) / (10**18)
             seller = listings[0]["maker"]["user"]["username"]
+            seller = listings[0]["maker"]["user"]["username"] if listings[0]["maker"]["user"] else "Unnamed"
 
 
         embed = create_embed("checked",
