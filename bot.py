@@ -248,11 +248,11 @@ async def getLucha():
 
 
 
-last_event_id = 0
+last_event_id_treated = 4134252115
 @tasks.loop(minutes=1)
 async def getLastEvents():
 
-    global last_event_id
+    global last_event_id_treated
 
     channel_listings = client.get_channel(CHANNEL_LISTINGS)
     channel_sales    = client.get_channel(CHANNEL_SALES)
@@ -266,38 +266,63 @@ async def getLastEvents():
         await channel_sales.send(events_body["msg"])
         return
     
+    current_event_id = int(events_body["msg"]["asset_events"][0]["id"])
     listings = []
     sales    = []
+    
+    done = False
+    while not done:
 
-    for event in events_body["msg"]["asset_events"]:
+        for event in events_body["msg"]["asset_events"]:
 
-        # break when eventId = the last eventId treated from the last API call
-        eventId = int(event["id"])
-        if last_event_id == eventId:
-            break
+            # done when eventId = the last eventId treated
+            eventId = int(event["id"])
+            if eventId == last_event_id_treated:
+                done = True
+                break
 
-        # sale
-        if event["event_type"] == "successful":
+            # sale
+            if event["event_type"] == "successful":
 
-            try:
-                seller = event["seller"]["user"]["username"]
-            except:
-                seller = event["seller"]["address"][:8]
-            
-            try:
-                buyer = event["winner_account"]["user"]["username"]
-            except:
-                buyer = event["winner_account"]["address"][:8]
-
-            price = int(event["total_price"]) / (10**18)
-
-            # bundle
-            if event["asset_bundle"]:
-
-                for asset in event["asset_bundle"]["assets"]:
-                    
-                    tokenId = asset["token_id"]
+                try:
+                    seller = event["seller"]["user"]["username"]
+                except:
+                    seller = event["seller"]["address"][:8]
                 
+                try:
+                    buyer = event["winner_account"]["user"]["username"]
+                except:
+                    buyer = event["winner_account"]["address"][:8]
+
+                price = int(event["total_price"]) / (10**18)
+
+                # bundle
+                if event["asset_bundle"]:
+
+                    for asset in event["asset_bundle"]["assets"]:
+                        
+                        tokenId = asset["token_id"]
+                    
+                        asset_url = "{}/asset/{}/{}".format(OS_API_URL,CONTRACT_ADDR_2, tokenId)
+                        asset_body = handle_request(asset_url)
+
+                        if asset_body["code"] != 0:
+                            await channel_sales.send(asset_body["msg"])
+                            return
+
+                        embed = create_embed("sold (bundle)",
+                                            asset_body["msg"],
+                                            price,
+                                            seller,
+                                            buyer)
+
+                        sales += [embed]
+
+                # single asset
+                elif event["asset"]:
+
+                    tokenId = event["asset"]["token_id"]
+
                     asset_url = "{}/asset/{}/{}".format(OS_API_URL,CONTRACT_ADDR_2, tokenId)
                     asset_body = handle_request(asset_url)
 
@@ -305,7 +330,7 @@ async def getLastEvents():
                         await channel_sales.send(asset_body["msg"])
                         return
 
-                    embed = create_embed("sold (bundle)",
+                    embed = create_embed("sold",
                                         asset_body["msg"],
                                         price,
                                         seller,
@@ -313,42 +338,41 @@ async def getLastEvents():
 
                     sales += [embed]
 
-            # single asset
-            elif event["asset"]:
+            # listing
+            elif event["event_type"] == "created":
 
-                tokenId = event["asset"]["token_id"]
-
-                asset_url = "{}/asset/{}/{}".format(OS_API_URL,CONTRACT_ADDR_2, tokenId)
-                asset_body = handle_request(asset_url)
-
-                if asset_body["code"] != 0:
-                    await channel_sales.send(asset_body["msg"])
-                    return
-
-                embed = create_embed("sold",
-                                    asset_body["msg"],
-                                    price,
-                                    seller,
-                                    buyer)
-
-                sales += [embed]
-
-        # listing
-        elif event["event_type"] == "created":
-
-            try:
-                seller = event["seller"]["user"]["username"]
-            except:
-                seller = event["seller"]["address"][:8]
-            
-            price = int(event["ending_price"]) / (10**18)
-
-            # bundle
-            if event["asset_bundle"]:
-
-                for asset in event["asset_bundle"]["assets"]:
-                    tokenId = asset["token_id"]
+                try:
+                    seller = event["seller"]["user"]["username"]
+                except:
+                    seller = event["seller"]["address"][:8]
                 
+                price = int(event["ending_price"]) / (10**18)
+
+                # bundle
+                if event["asset_bundle"]:
+
+                    for asset in event["asset_bundle"]["assets"]:
+                        tokenId = asset["token_id"]
+                    
+                        asset_url = "{}/asset/{}/{}".format(OS_API_URL,CONTRACT_ADDR_2, tokenId)
+                        asset_body = handle_request(asset_url)
+
+                        if asset_body["code"] != 0:
+                            await channel_sales.send(asset_body["msg"])
+                            return
+
+                        embed = create_embed("listed (bundle)",
+                                            asset_body["msg"],
+                                            price,
+                                            seller)
+
+                        listings += [embed]
+
+                # single asset
+                elif event["asset"]:
+
+                    tokenId = event["asset"]["token_id"]
+                    
                     asset_url = "{}/asset/{}/{}".format(OS_API_URL,CONTRACT_ADDR_2, tokenId)
                     asset_body = handle_request(asset_url)
 
@@ -356,33 +380,29 @@ async def getLastEvents():
                         await channel_sales.send(asset_body["msg"])
                         return
 
-                    embed = create_embed("listed (bundle)",
+                    embed = create_embed("listed",
                                         asset_body["msg"],
                                         price,
                                         seller)
 
                     listings += [embed]
 
-            # single asset
-            elif event["asset"]:
+        # the OS API sends back the last 20 events:
+        # if more than 20 events happened in 1min,
+        # do an another API call on previous events
+        # and loop until all events are treated
+        if not done:
+            params = {'asset_contract_address': CONTRACT_ADDR_2,
+                      'cursor': events_body["msg"]["next"]}
+        
+            events_url = "{}/events".format(OS_API_URL)
+            events_body = handle_request(events_url, params)
 
-                tokenId = event["asset"]["token_id"]
-                
-                asset_url = "{}/asset/{}/{}".format(OS_API_URL,CONTRACT_ADDR_2, tokenId)
-                asset_body = handle_request(asset_url)
+            if events_body["code"] != 0:
+                await channel_sales.send(events_body["msg"])
+                return
 
-                if asset_body["code"] != 0:
-                    await channel_sales.send(asset_body["msg"])
-                    return
-
-                embed = create_embed("listed",
-                                    asset_body["msg"],
-                                    price,
-                                    seller)
-
-                listings += [embed]
-
-    last_event_id = int(events_body["msg"]["asset_events"][0]["id"])
+    last_event_id_treated = current_event_id
     for msg in reversed(sales):
         await channel_sales.send(embed=msg)
     for msg in reversed(listings):
