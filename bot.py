@@ -486,9 +486,9 @@ async def on_message(message):
 
             listingPrice = float(min(listingPrices)) / (10**18)
             try:
-                seller = listings[0]["maker"]["user"]["username"]
+                seller = asset_body["msg"]["owner"]["user"]["username"]
             except:
-                seller = listings[0]["maker"]["address"][:8]
+                seller = asset_body["msg"]["owner"]["address"][:8]
 
         embed = create_embed("checked",
                             asset_body["msg"],
