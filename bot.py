@@ -18,18 +18,6 @@ load_dotenv()
 
 
 ###  ENVIRONNEMENT VARIABLES  ###
-DISCORD_TOKEN         =     os.environ.get("DISCORD_TOKEN")
-DISCORD_GUILD         = int(os.environ.get("DISCORD_GUILD"))
-CHANNEL_GET_DATA      = int(os.environ.get("CHANNEL_GET_DATA"))
-CHANNEL_NEVER_CLAIMED = int(os.environ.get("CHANNEL_NEVER_CLAIMED"))
-CHANNEL_FLOOR         = int(os.environ.get("CHANNEL_FLOOR"))
-CHANNEL_ETH_PRICE     = int(os.environ.get("CHANNEL_ETH_PRICE"))
-CHANNEL_LUCHA_PRICE   = int(os.environ.get("CHANNEL_LUCHA_PRICE"))
-CHANNEL_SALES         = int(os.environ.get("CHANNEL_SALES"))
-CHANNEL_LISTINGS      = int(os.environ.get("CHANNEL_LISTINGS"))
-OPENSEA_API_KEY       =     os.environ.get("OPENSEA_API_KEY")
-ALCHEMY_API_KEY       =     os.environ.get("ALCHEMY_API_KEY")
-
 if not "DISCORD_TOKEN" in os.environ:
     exit("ENV VAR DISCORD_TOKEN not defined")
 if not "DISCORD_GUILD" in os.environ:
@@ -52,6 +40,18 @@ if not "OPENSEA_API_KEY" in os.environ:
     exit("ENV VAR OPENSEA_API_KEY not defined")
 if not "ALCHEMY_API_KEY" in os.environ:
     exit("ENV VAR ALCHEMY_API_KEY not defined")
+
+DISCORD_TOKEN         =     os.environ.get("DISCORD_TOKEN")
+DISCORD_GUILD         = int(os.environ.get("DISCORD_GUILD"))
+CHANNEL_GET_DATA      = int(os.environ.get("CHANNEL_GET_DATA"))
+CHANNEL_NEVER_CLAIMED = int(os.environ.get("CHANNEL_NEVER_CLAIMED"))
+CHANNEL_FLOOR         = int(os.environ.get("CHANNEL_FLOOR"))
+CHANNEL_ETH_PRICE     = int(os.environ.get("CHANNEL_ETH_PRICE"))
+CHANNEL_LUCHA_PRICE   = int(os.environ.get("CHANNEL_LUCHA_PRICE"))
+CHANNEL_SALES         = int(os.environ.get("CHANNEL_SALES"))
+CHANNEL_LISTINGS      = int(os.environ.get("CHANNEL_LISTINGS"))
+OPENSEA_API_KEY       =     os.environ.get("OPENSEA_API_KEY")
+ALCHEMY_API_KEY       =     os.environ.get("ALCHEMY_API_KEY")
 
 
 
@@ -279,8 +279,16 @@ async def getLastEvents():
         # sale
         if event["event_type"] == "successful":
 
-            seller = event["seller"]["user"]["username"] if event["seller"]["user"]["username"] else "Unnamed"
-            buyer = event["winner_account"]["user"]["username"] if event["winner_account"]["user"]["username"] else "Unnamed"
+            try:
+                seller = event["seller"]["user"]["username"]
+            except:
+                seller = event["seller"]["address"][:8]
+            
+            try:
+                buyer = event["winner_account"]["user"]["username"]
+            except:
+                buyer = event["winner_account"]["address"][:8]
+
             price = int(event["total_price"]) / (10**18)
 
             # bundle
@@ -328,7 +336,11 @@ async def getLastEvents():
         # listing
         elif event["event_type"] == "created":
 
-            seller = event["seller"]["user"]["username"] if event["seller"]["user"] else "Unnamed"
+            try:
+                seller = event["seller"]["user"]["username"]
+            except:
+                seller = event["seller"]["address"][:8]
+            
             price = int(event["ending_price"]) / (10**18)
 
             # bundle
@@ -473,9 +485,10 @@ async def on_message(message):
                 listingPrices += [price["current_price"]]
 
             listingPrice = float(min(listingPrices)) / (10**18)
-            seller = listings[0]["maker"]["user"]["username"]
-            seller = listings[0]["maker"]["user"]["username"] if listings[0]["maker"]["user"] else "Unnamed"
-
+            try:
+                seller = listings[0]["maker"]["user"]["username"]
+            except:
+                seller = listings[0]["maker"]["address"][:8]
 
         embed = create_embed("checked",
                             asset_body["msg"],
