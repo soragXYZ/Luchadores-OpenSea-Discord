@@ -36,6 +36,8 @@ if not "CHANNEL_SALES" in os.environ:
     exit("ENV VAR CHANNEL_SALES not defined")
 if not "CHANNEL_LISTINGS" in os.environ:
     exit("ENV VAR CHANNEL_LISTINGS not defined")
+if not "CHANNEL_OFFERS" in os.environ:
+    exit("ENV VAR CHANNEL_OFFERS not defined")
 if not "OPENSEA_API_KEY" in os.environ:
     exit("ENV VAR OPENSEA_API_KEY not defined")
 if not "ALCHEMY_API_KEY" in os.environ:
@@ -50,6 +52,7 @@ CHANNEL_ETH_PRICE     = int(os.environ.get("CHANNEL_ETH_PRICE"))
 CHANNEL_LUCHA_PRICE   = int(os.environ.get("CHANNEL_LUCHA_PRICE"))
 CHANNEL_SALES         = int(os.environ.get("CHANNEL_SALES"))
 CHANNEL_LISTINGS      = int(os.environ.get("CHANNEL_LISTINGS"))
+CHANNEL_OFFERS        = int(os.environ.get("CHANNEL_OFFERS"))
 OPENSEA_API_KEY       =     os.environ.get("OPENSEA_API_KEY")
 ALCHEMY_API_KEY       =     os.environ.get("ALCHEMY_API_KEY")
 
@@ -134,9 +137,9 @@ def handle_request(url, params = {}):
 
 def create_embed(type,
                  data,
-                 price,
-                 seller,
-                 buyer=0):
+                 price  = None,
+                 seller = None,
+                 buyer  = None):
 
     tokenId = data["token_id"]
     traits = data['traits'][-1]['value']
@@ -168,34 +171,48 @@ def create_embed(type,
                     inline  = True)
 
 
-    if price:
+    if( type in "listed"
+     or type in "sold"
+     or type in "checked"):
+        if price:
+            lucha    = cg.get_price(ids='lucha',    vs_currencies='usd')
+            ethereum = cg.get_price(ids='ethereum', vs_currencies='usd')
 
-        lucha = cg.get_price(ids='lucha', vs_currencies='usd')
-        lucha_price = lucha['lucha']['usd']
-        ethereum = cg.get_price(ids='ethereum', vs_currencies='usd')
-        ethereum_price = ethereum['ethereum']['usd']
+            lucha_price    = lucha['lucha']['usd']
+            ethereum_price = ethereum['ethereum']['usd']
 
-        fiat_price = price * ethereum_price
-        
-        # $ price with $lucha token deducted
-        realPrice = fiat_price - pendingYield * lucha_price
-        roi = int(realPrice / (lyield[traits] * lucha_price))
+            fiat_price = price * ethereum_price
+            
+            # $ price with $lucha token deducted
+            realPrice = fiat_price - pendingYield * lucha_price
+            roi = int(realPrice / (lyield[traits] * lucha_price))
 
-        embed.add_field(name   = "ETH Price",
+            embed.add_field(name   = "ETH Price",
+                            value  = price,
+                            inline = True)
+            embed.add_field(name   = "Seller",
+                            value  = seller,
+                            inline = True)
+            if buyer:
+                embed.add_field(name   = "Buyer",
+                                value  = buyer,
+                                inline = True)
+            embed.add_field(name   = "Real $ price",
+                            value  = int(realPrice),
+                            inline = True)
+            embed.add_field(name   = "ROI in days",
+                            value  = roi,
+                            inline = True)
+
+    if type in "wanted":
+        embed.add_field(name   = "ETH Proposed Price",
                         value  = price,
                         inline = True)
-        embed.add_field(name   = "Seller",
+        embed.add_field(name   = "Owner",
                         value  = seller,
                         inline = True)
-        if buyer:
-            embed.add_field(name   = "Buyer",
-                            value  = buyer,
-                            inline = True)
-        embed.add_field(name   = "Real $ price",
-                        value  = int(realPrice),
-                        inline = True)
-        embed.add_field(name   = "ROI in days",
-                        value  = roi,
+        embed.add_field(name   = "Proposer",
+                        value  = buyer,
                         inline = True)
 
     return embed
@@ -248,7 +265,7 @@ async def getLucha():
 
 
 
-last_event_id_treated = 4134252115
+last_event_id_treated = 4201212623
 @tasks.loop(minutes=1)
 async def getLastEvents():
 
@@ -256,6 +273,7 @@ async def getLastEvents():
 
     channel_listings = client.get_channel(CHANNEL_LISTINGS)
     channel_sales    = client.get_channel(CHANNEL_SALES)
+    channel_offers   = client.get_channel(CHANNEL_OFFERS)
     
     params = {'asset_contract_address': CONTRACT_ADDR_2}
     
@@ -269,6 +287,7 @@ async def getLastEvents():
     current_event_id = int(events_body["msg"]["asset_events"][0]["id"])
     listings = []
     sales    = []
+    offers   = []
     
     done = False
     while not done:
@@ -288,11 +307,13 @@ async def getLastEvents():
                     seller = event["seller"]["user"]["username"]
                 except:
                     seller = event["seller"]["address"][:8]
+                if seller == None: seller = event["seller"]["address"][:8]
                 
                 try:
                     buyer = event["winner_account"]["user"]["username"]
                 except:
                     buyer = event["winner_account"]["address"][:8]
+                if buyer == None: buyer = event["winner_account"]["address"][:8]
 
                 price = int(event["total_price"]) / (10**18)
 
@@ -345,6 +366,7 @@ async def getLastEvents():
                     seller = event["seller"]["user"]["username"]
                 except:
                     seller = event["seller"]["address"][:8]
+                if seller == None: seller = event["seller"]["address"][:8]
                 
                 price = int(event["ending_price"]) / (10**18)
 
@@ -387,6 +409,42 @@ async def getLastEvents():
 
                     listings += [embed]
 
+
+            # offer
+            elif event["event_type"] == "offer_entered":
+
+                try:
+                    seller = event["asset"]["owner"]["user"]["username"]
+                except:
+                    seller = event["asset"]["owner"]["address"][:8]
+                if seller == None: seller = event["asset"]["owner"]["address"][:8]
+
+                try:
+                    buyer = event["from_account"]["user"]["username"]
+                except:
+                    buyer = event["from_account"]["address"][:8]
+                if buyer == None: buyer = event["from_account"]["address"][:8]
+
+                price = int(event["bid_amount"]) / (10**18)
+
+
+                tokenId = event["asset"]["token_id"]
+                
+                asset_url = "{}/asset/{}/{}".format(OS_API_URL,CONTRACT_ADDR_2, tokenId)
+                asset_body = handle_request(asset_url)
+
+                if asset_body["code"] != 0:
+                    await channel_offers.send(asset_body["msg"])
+                    return
+
+                embed = create_embed("wanted",
+                                    asset_body["msg"],
+                                    price,
+                                    seller,
+                                    buyer)
+
+                offers += [embed]
+
         # the OS API sends back the last 20 events:
         # if more than 20 events happened in 1min,
         # do an another API call on previous events
@@ -407,6 +465,8 @@ async def getLastEvents():
         await channel_sales.send(embed=msg)
     for msg in reversed(listings):
         await channel_listings.send(embed=msg)
+    for msg in reversed(offers):
+        await channel_offers.send(embed=msg)
 
 
 
@@ -509,6 +569,7 @@ async def on_message(message):
                 seller = asset_body["msg"]["owner"]["user"]["username"]
             except:
                 seller = asset_body["msg"]["owner"]["address"][:8]
+            if seller == None: seller = asset_body["msg"]["owner"]["address"][:8]
 
         embed = create_embed("checked",
                             asset_body["msg"],
