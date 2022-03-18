@@ -1,7 +1,11 @@
 ###  IMPORTS  ###
 import os
-import requests
 import json
+import datetime
+
+import requests
+from requests.packages.urllib3.util.retry import Retry
+from requests.adapters import HTTPAdapter
 
 import discord
 from discord.ext import tasks
@@ -38,6 +42,8 @@ if not "CHANNEL_LISTINGS" in os.environ:
     exit("ENV VAR CHANNEL_LISTINGS not defined")
 if not "CHANNEL_OFFERS" in os.environ:
     exit("ENV VAR CHANNEL_OFFERS not defined")
+if not "CHANNEL_KEEPALIVE" in os.environ:
+    exit("ENV VAR CHANNEL_KEEPALIVE not defined")
 if not "OPENSEA_API_KEY" in os.environ:
     exit("ENV VAR OPENSEA_API_KEY not defined")
 if not "ALCHEMY_API_KEY" in os.environ:
@@ -53,6 +59,7 @@ CHANNEL_LUCHA_PRICE   = int(os.environ.get("CHANNEL_LUCHA_PRICE"))
 CHANNEL_SALES         = int(os.environ.get("CHANNEL_SALES"))
 CHANNEL_LISTINGS      = int(os.environ.get("CHANNEL_LISTINGS"))
 CHANNEL_OFFERS        = int(os.environ.get("CHANNEL_OFFERS"))
+CHANNEL_KEEPALIVE     = int(os.environ.get("CHANNEL_KEEPALIVE"))
 OPENSEA_API_KEY       =     os.environ.get("OPENSEA_API_KEY")
 ALCHEMY_API_KEY       =     os.environ.get("ALCHEMY_API_KEY")
 
@@ -99,8 +106,13 @@ LUCHADORES_IMG_URL = "https://luchadores-io.s3.us-east-2.amazonaws.com/img"
 ###  Send get requests to opensea API  ###
 def handle_request(url, params = {}):
 
+    session = requests.Session()
+    retries = Retry(total=3, backoff_factor=0.3)
+    session.mount('https://', HTTPAdapter(max_retries=retries))
+
     try:
-        response = requests.get(
+        response = session.request(
+            'GET',
             url,
             headers = {"Accept": "application/json",
                        "X-API-KEY": OPENSEA_API_KEY},
@@ -265,8 +277,19 @@ async def getLucha():
 
 
 
+@tasks.loop(seconds=30)
+async def keepAlive():
+
+    channel = client.get_channel(CHANNEL_KEEPALIVE)
+    now = datetime.datetime.now()
+    date = now.strftime("%Y-%m-%d %H:%M:%S")
+
+    await channel.send(str(date))
+    
+
+
 last_event_id_treated = 4201212623
-@tasks.loop(minutes=1)
+@tasks.loop(minutes=2)
 async def getLastEvents():
 
     global last_event_id_treated
@@ -484,6 +507,9 @@ async def on_ready():
     
     if not getLastEvents.is_running():
         getLastEvents.start()
+
+    if not keepAlive.is_running():
+        keepAlive.start()
 
 
 
