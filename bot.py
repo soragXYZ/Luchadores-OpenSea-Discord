@@ -183,9 +183,9 @@ def create_embed(type,
                     inline  = True)
 
 
-    if( type in "listed"
-     or type in "sold"
-     or type in "checked"):
+    if( "listed"  in type
+     or "sold"    in type
+     or "checked" in type):
         if price:
             lucha    = cg.get_price(ids='lucha',    vs_currencies='usd')
             ethereum = cg.get_price(ids='ethereum', vs_currencies='usd')
@@ -216,7 +216,7 @@ def create_embed(type,
                             value  = roi,
                             inline = True)
 
-    if type in "wanted":
+    if "wanted" in type:
         embed.add_field(name   = "ETH Proposed Price",
                         value  = price,
                         inline = True)
