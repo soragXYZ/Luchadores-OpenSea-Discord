@@ -1,7 +1,6 @@
 ###  IMPORTS  ###
 import os
 import json
-import datetime
 
 import requests
 from requests.packages.urllib3.util.retry import Retry

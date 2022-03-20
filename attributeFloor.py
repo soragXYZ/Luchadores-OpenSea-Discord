@@ -1,12 +1,46 @@
+###  IMPORTS  ###
+import os
+import json
+
 import requests
 from requests.packages.urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
-import json
-import datetime
 
+import discord
+from discord.ext import tasks
+client = discord.Client()
+
+from web3 import Web3
+
+from dotenv import load_dotenv
+load_dotenv()
+
+
+
+###  ENVIRONNEMENT VARIABLES  ###
+if not "DISCORD_TOKEN" in os.environ:
+    exit("ENV VAR DISCORD_TOKEN not defined")
+if not "DISCORD_GUILD" in os.environ:
+    exit("ENV VAR DISCORD_GUILD not defined")
+if not "CHANNEL_GET_DATA" in os.environ:
+    exit("ENV VAR CHANNEL_GET_DATA not defined")
+if not "CHANNEL_DEBUG" in os.environ:
+    exit("ENV VAR CHANNEL_DEBUG not defined")
+if not "OPENSEA_API_KEY" in os.environ:
+    exit("ENV VAR OPENSEA_API_KEY not defined")
+
+
+DISCORD_TOKEN         =     os.environ.get("DISCORD_TOKEN")
+DISCORD_GUILD         = int(os.environ.get("DISCORD_GUILD"))
+CHANNEL_GET_DATA      = int(os.environ.get("CHANNEL_GET_DATA"))
+CHANNEL_DEBUG         = int(os.environ.get("CHANNEL_DEBUG"))
+OPENSEA_API_KEY       =     os.environ.get("OPENSEA_API_KEY")
+
+# OpenSea API doc: https://docs.opensea.io/reference/api-overview
 OS_API_URL = "https://api.opensea.io/api/v1"
-CONTRACT_ADDR_2 = "0x8b4616926705fb61e9c4eeac07cd946a5d4b0760"
-OPENSEA_API_KEY = "e866bed80d904e27bc0d56f68367ba0b"
+LUCHA_ADDR = "0x8b4616926705fb61e9c4eeac07cd946a5d4b0760"
+
+
 
 ###  Send get requests to opensea API  ###
 def handle_request(url, params = {}):
@@ -50,6 +84,8 @@ def handle_request(url, params = {}):
         msg = "Invalid json sent when querying" + url
         return {"code": 1, "msg": msg}
 
+
+
 floorT = {
     0:100,
     1:100,
@@ -62,10 +98,10 @@ floorT = {
 }
 
 
-start = datetime.datetime.now()
+
 for tokenId in range(1,10000):
 
-    url = "{}/asset/{}/{}".format(OS_API_URL,CONTRACT_ADDR_2, tokenId)
+    url = "{}/asset/{}/{}".format(OS_API_URL, LUCHA_ADDR, tokenId)
     events_body = handle_request(url)
     
     if events_body["code"] != 0:
@@ -74,7 +110,7 @@ for tokenId in range(1,10000):
     name = events_body["msg"]["name"]
     attr = events_body["msg"]["traits"][-1]["value"]
 
-    listing_url = "{}/asset/{}/{}/listings".format(OS_API_URL,CONTRACT_ADDR_2, tokenId)
+    listing_url = "{}/asset/{}/{}/listings".format(OS_API_URL, LUCHA_ADDR, tokenId)
     listing_body = handle_request(listing_url)
 
     if listing_body["code"] != 0:
@@ -95,9 +131,3 @@ for tokenId in range(1,10000):
 
 
 print(floorT)
-
-end = datetime.datetime.now()
-
-delta = end - start
-
-print(delta)
