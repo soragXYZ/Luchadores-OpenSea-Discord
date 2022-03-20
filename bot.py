@@ -11,9 +11,6 @@ import discord
 from discord.ext import tasks
 client = discord.Client()
 
-from pycoingecko import CoinGeckoAPI
-cg = CoinGeckoAPI()
-
 from web3 import Web3
 
 from dotenv import load_dotenv
@@ -42,8 +39,8 @@ if not "CHANNEL_LISTINGS" in os.environ:
     exit("ENV VAR CHANNEL_LISTINGS not defined")
 if not "CHANNEL_OFFERS" in os.environ:
     exit("ENV VAR CHANNEL_OFFERS not defined")
-if not "CHANNEL_KEEPALIVE" in os.environ:
-    exit("ENV VAR CHANNEL_KEEPALIVE not defined")
+if not "CHANNEL_DEBUG" in os.environ:
+    exit("ENV VAR CHANNEL_DEBUG not defined")
 if not "OPENSEA_API_KEY" in os.environ:
     exit("ENV VAR OPENSEA_API_KEY not defined")
 if not "ALCHEMY_API_KEY" in os.environ:
@@ -59,7 +56,7 @@ CHANNEL_LUCHA_PRICE   = int(os.environ.get("CHANNEL_LUCHA_PRICE"))
 CHANNEL_SALES         = int(os.environ.get("CHANNEL_SALES"))
 CHANNEL_LISTINGS      = int(os.environ.get("CHANNEL_LISTINGS"))
 CHANNEL_OFFERS        = int(os.environ.get("CHANNEL_OFFERS"))
-CHANNEL_KEEPALIVE     = int(os.environ.get("CHANNEL_KEEPALIVE"))
+CHANNEL_DEBUG         = int(os.environ.get("CHANNEL_DEBUG"))
 OPENSEA_API_KEY       =     os.environ.get("OPENSEA_API_KEY")
 ALCHEMY_API_KEY       =     os.environ.get("ALCHEMY_API_KEY")
 
@@ -87,6 +84,9 @@ lucha_claim = web3.eth.contract(address=CONTRACT_ADDR_1, abi=luchaABI)
 OS_API_URL = "https://api.opensea.io/api/v1"
 OS_URL     = "https://opensea.io"
 
+# Fetch prices with coingecko: https://www.coingecko.com/en/api/documentation
+CG_API_URL = url = "https://api.coingecko.com/api/v3/simple/price"
+
 # $LUCHA yield, based on attribute rarity: https://luchadores.io/yield
 lyield = {
     3:1,
@@ -107,7 +107,7 @@ LUCHADORES_IMG_URL = "https://luchadores-io.s3.us-east-2.amazonaws.com/img"
 def handle_request(url, params = {}):
 
     session = requests.Session()
-    retries = Retry(total=3, backoff_factor=0.3)
+    retries = Retry(total=5, backoff_factor=0.5, status_forcelist=[429,495])
     session.mount('https://', HTTPAdapter(max_retries=retries))
 
     try:
@@ -148,10 +148,10 @@ def handle_request(url, params = {}):
 
 
 def create_embed(type,
-                 data,
-                 price  = None,
-                 seller = None,
-                 buyer  = None):
+                       data,
+                       price  = None,
+                       seller = None,
+                       buyer  = None):
 
     tokenId = data["token_id"]
     traits = data['traits'][-1]['value']
@@ -187,11 +187,22 @@ def create_embed(type,
      or "sold"    in type
      or "checked" in type):
         if price:
-            lucha    = cg.get_price(ids='lucha',    vs_currencies='usd')
-            ethereum = cg.get_price(ids='ethereum', vs_currencies='usd')
+            
+            channel_debug = client.get_channel(CHANNEL_DEBUG)
+            
 
-            lucha_price    = lucha['lucha']['usd']
-            ethereum_price = ethereum['ethereum']['usd']
+            params = {'ids':'ethereum,lucha', 'vs_currencies':'usd'}
+            price_body = handle_request(CG_API_URL, params)
+            
+            if price_body["code"] != 0:
+                channel_debug.send(price_body["msg"])
+                
+            try:
+                lucha_price    = price_body["msg"]["lucha"]["usd"]
+                ethereum_price = price_body["msg"]["ethereum"]["usd"]
+            except:
+                lucha_price = 1
+                ethereum_price = 0
 
             fiat_price = price * ethereum_price
             
@@ -215,6 +226,12 @@ def create_embed(type,
             embed.add_field(name   = "ROI in days",
                             value  = roi,
                             inline = True)
+        
+        else:
+            embed.add_field(name   = "Owner",
+                            value  = seller,
+                            inline = True)
+
 
     if "wanted" in type:
         embed.add_field(name   = "ETH Proposed Price",
@@ -231,80 +248,67 @@ def create_embed(type,
 
 
 
-###  Refresh lucha, eth and floor price  ###
-@tasks.loop(minutes=10)
+###  Refresh floor price  ###
+@tasks.loop(minutes=15)
 async def getFloor():
 
-    channel = client.get_channel(CHANNEL_FLOOR)
+    channel_floor = client.get_channel(CHANNEL_FLOOR)
+    channel_debug = client.get_channel(CHANNEL_DEBUG)
 
     
     stats_url = "{}/collection/{}/stats".format(OS_API_URL, COLLECTION_SLUG)
     stats_body = handle_request(stats_url)
     if stats_body["code"] != 0:
-        await channel.send(stats_body["msg"])
+        await channel_debug.send(stats_body["msg"])
         return
 
     floorPrice = stats_body["msg"]['stats']['floor_price']
     
     name = '『floor』{}♟'.format(round(floorPrice,3)).replace('.','༝')
-    await channel.edit(name=name)
+    await channel_floor.edit(name=name)
 
 
 
-@tasks.loop(minutes=10)
-async def getEth():
+###  Refresh eth and lucha price  ###
+@tasks.loop(minutes=15)
+async def getPrice():
 
-    channel = client.get_channel(CHANNEL_ETH_PRICE)
+    channel_eth_price = client.get_channel(CHANNEL_ETH_PRICE)
+    channel_lucha_price = client.get_channel(CHANNEL_LUCHA_PRICE)
+    channel_debug = client.get_channel(CHANNEL_DEBUG)
 
-    ethereum = cg.get_price(ids='ethereum', vs_currencies='usd')
-    ethereum_price = int(ethereum['ethereum']['usd'])
+    params = {'ids':'ethereum,lucha', 'vs_currencies':'usd'}
+    price_body = handle_request(CG_API_URL, params)
+    if price_body["code"] != 0:
+        await channel_debug.send(price_body["msg"])
+        return
 
-    name = '『ETH』{}💲'.format(ethereum_price)
-    await channel.edit(name=name)
+    lucha_price    = price_body["msg"]["lucha"]["usd"]
+    ethereum_price = int(price_body["msg"]["ethereum"]["usd"])
 
+    eth_name = '『ETH』{}💲'.format(ethereum_price)
+    lucha_name = '『LUCHA』{}💲'.format(round(lucha_price,3)).replace('.','༝')
 
-
-@tasks.loop(minutes=10)
-async def getLucha():
-
-    channel = client.get_channel(CHANNEL_LUCHA_PRICE)
-
-    lucha = cg.get_price(ids='lucha', vs_currencies='usd')
-    lucha_price = lucha['lucha']['usd']
-
-    name = '『LUCHA』{}💲'.format(round(lucha_price,3)).replace('.','༝')
-    await channel.edit(name=name)
-
+    await channel_eth_price.edit(name=eth_name)
+    await channel_lucha_price.edit(name=lucha_name)
 
 
-@tasks.loop(seconds=30)
-async def keepAlive():
 
-    channel = client.get_channel(CHANNEL_KEEPALIVE)
-    now = datetime.datetime.now()
-    date = now.strftime("%Y-%m-%d %H:%M:%S")
-
-    await channel.send(str(date))
-    
-
-
-last_event_id_treated = 4201212623
-@tasks.loop(minutes=2)
+###  Get events from OS: sales, listings, offers  ###
+last_event_id_treated = 4261108047
+@tasks.loop(minutes=1)
 async def getLastEvents():
 
     global last_event_id_treated
 
-    channel_listings = client.get_channel(CHANNEL_LISTINGS)
-    channel_sales    = client.get_channel(CHANNEL_SALES)
-    channel_offers   = client.get_channel(CHANNEL_OFFERS)
+    channel_debug    = client.get_channel(CHANNEL_DEBUG)
     
     params = {'asset_contract_address': CONTRACT_ADDR_2}
-    
     events_url = "{}/events".format(OS_API_URL)
     events_body = handle_request(events_url, params)
 
     if events_body["code"] != 0:
-        await channel_sales.send(events_body["msg"])
+        await channel_debug.send(events_body["msg"])
         return
     
     current_event_id = int(events_body["msg"]["asset_events"][0]["id"])
@@ -351,7 +355,7 @@ async def getLastEvents():
                         asset_body = handle_request(asset_url)
 
                         if asset_body["code"] != 0:
-                            await channel_sales.send(asset_body["msg"])
+                            await channel_debug.send(asset_body["msg"])
                             return
 
                         embed = create_embed("sold (bundle)",
@@ -371,7 +375,7 @@ async def getLastEvents():
                     asset_body = handle_request(asset_url)
 
                     if asset_body["code"] != 0:
-                        await channel_sales.send(asset_body["msg"])
+                        await channel_debug.send(asset_body["msg"])
                         return
 
                     embed = create_embed("sold",
@@ -403,7 +407,7 @@ async def getLastEvents():
                         asset_body = handle_request(asset_url)
 
                         if asset_body["code"] != 0:
-                            await channel_sales.send(asset_body["msg"])
+                            await channel_debug.send(asset_body["msg"])
                             return
 
                         embed = create_embed("listed (bundle)",
@@ -422,7 +426,7 @@ async def getLastEvents():
                     asset_body = handle_request(asset_url)
 
                     if asset_body["code"] != 0:
-                        await channel_sales.send(asset_body["msg"])
+                        await channel_debug.send(asset_body["msg"])
                         return
 
                     embed = create_embed("listed",
@@ -457,7 +461,7 @@ async def getLastEvents():
                 asset_body = handle_request(asset_url)
 
                 if asset_body["code"] != 0:
-                    await channel_offers.send(asset_body["msg"])
+                    await channel_debug.send(asset_body["msg"])
                     return
 
                 embed = create_embed("wanted",
@@ -480,10 +484,15 @@ async def getLastEvents():
             events_body = handle_request(events_url, params)
 
             if events_body["code"] != 0:
-                await channel_sales.send(events_body["msg"])
+                await channel_debug.send(events_body["msg"])
                 return
 
     last_event_id_treated = current_event_id
+
+    channel_listings = client.get_channel(CHANNEL_LISTINGS)
+    channel_sales    = client.get_channel(CHANNEL_SALES)
+    channel_offers   = client.get_channel(CHANNEL_OFFERS)
+
     for msg in reversed(sales):
         await channel_sales.send(embed=msg)
     for msg in reversed(listings):
@@ -493,37 +502,18 @@ async def getLastEvents():
 
 
 
-@client.event
-async def on_ready():
-
-    if not getFloor.is_running():
-        getFloor.start()
-
-    if not getEth.is_running():
-        getEth.start()
-    
-    if not getLucha.is_running():
-        getLucha.start()
-    
-    if not getLastEvents.is_running():
-        getLastEvents.start()
-
-    if not keepAlive.is_running():
-        keepAlive.start()
-
-
-
+###  Deal with msgs sent to Discord  ###
 @client.event
 async def on_message(message):
 
     channel_get_data      = client.get_channel(CHANNEL_GET_DATA)
     channel_never_claimed = client.get_channel(CHANNEL_NEVER_CLAIMED)
+    channel_debug         = client.get_channel(CHANNEL_DEBUG)
 
     # If the bot send a msg, do nothing
     if message.author == client.user:
         return
     
-
     # Check how many lucha have been claimed out of 10k
     if message.channel == channel_never_claimed:
 
@@ -562,25 +552,27 @@ async def on_message(message):
             await channel_get_data.send("Type an integer between 1 and 10 000")
             return
         
-
         listing_url = "{}/asset/{}/{}/listings".format(OS_API_URL,CONTRACT_ADDR_2, tokenId)
         listing_body = handle_request(listing_url)
 
         if listing_body["code"] != 0:
-            await channel_get_data.send(listing_body["msg"])
+            await channel_debug.send(listing_body["msg"])
             return
 
         asset_url = "{}/asset/{}/{}".format(OS_API_URL,CONTRACT_ADDR_2, tokenId)
         asset_body = handle_request(asset_url)
 
         if asset_body["code"] != 0:
-            await channel_get_data.send(asset_body["msg"])
+            await channel_debug.send(asset_body["msg"])
             return
 
+        try:
+            seller = asset_body["msg"]["owner"]["user"]["username"]
+        except:
+            seller = asset_body["msg"]["owner"]["address"][:8]
+        if seller == None: seller = asset_body["msg"]["owner"]["address"][:8]
 
         listingPrice = 0
-        seller = 0
-
         listings = listing_body["msg"]["listings"]
 
         # if the lucha is listed on sale
@@ -591,11 +583,6 @@ async def on_message(message):
                 listingPrices += [price["current_price"]]
 
             listingPrice = float(min(listingPrices)) / (10**18)
-            try:
-                seller = asset_body["msg"]["owner"]["user"]["username"]
-            except:
-                seller = asset_body["msg"]["owner"]["address"][:8]
-            if seller == None: seller = asset_body["msg"]["owner"]["address"][:8]
 
         embed = create_embed("checked",
                             asset_body["msg"],
@@ -603,7 +590,22 @@ async def on_message(message):
                             seller)
 
         await channel_get_data.send(embed=embed)
-        
-        
+
+
+
+###  Start  ###
+@client.event
+async def on_ready():
+
+    if not getFloor.is_running():
+        getFloor.start()
+
+    if not getPrice.is_running():
+        getPrice.start()
+    
+    if not getLastEvents.is_running():
+        getLastEvents.start()
+
+
 
 client.run(DISCORD_TOKEN)

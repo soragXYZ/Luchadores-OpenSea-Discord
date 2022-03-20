@@ -1,6 +1,4 @@
 TO DO
 
-channel offre
 floor by attributes
-fix if bugs
-add other marketplaces
+add other marketplaces (x2y2, sweep ?)
