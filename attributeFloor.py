@@ -10,8 +10,6 @@ import discord
 from discord.ext import tasks
 client = discord.Client()
 
-from web3 import Web3
-
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -22,19 +20,40 @@ if not "DISCORD_TOKEN" in os.environ:
     exit("ENV VAR DISCORD_TOKEN not defined")
 if not "DISCORD_GUILD" in os.environ:
     exit("ENV VAR DISCORD_GUILD not defined")
-if not "CHANNEL_GET_DATA" in os.environ:
-    exit("ENV VAR CHANNEL_GET_DATA not defined")
+if not "CHANNEL_0T" in os.environ:
+    exit("ENV VAR CHANNEL_0T not defined")
+if not "CHANNEL_1T" in os.environ:
+    exit("ENV VAR CHANNEL_1T not defined")
+if not "CHANNEL_2T" in os.environ:
+    exit("ENV VAR CHANNEL_2T not defined")
+if not "CHANNEL_3T" in os.environ:
+    exit("ENV VAR CHANNEL_3T not defined")
+if not "CHANNEL_4T" in os.environ:
+    exit("ENV VAR CHANNEL_4T not defined")
+if not "CHANNEL_5T" in os.environ:
+    exit("ENV VAR CHANNEL_5T not defined")
+if not "CHANNEL_6T" in os.environ:
+    exit("ENV VAR CHANNEL_6T not defined")
+if not "CHANNEL_7T" in os.environ:
+    exit("ENV VAR CHANNEL_7T not defined")
 if not "CHANNEL_DEBUG" in os.environ:
     exit("ENV VAR CHANNEL_DEBUG not defined")
 if not "OPENSEA_API_KEY" in os.environ:
     exit("ENV VAR OPENSEA_API_KEY not defined")
 
 
-DISCORD_TOKEN         =     os.environ.get("DISCORD_TOKEN")
-DISCORD_GUILD         = int(os.environ.get("DISCORD_GUILD"))
-CHANNEL_GET_DATA      = int(os.environ.get("CHANNEL_GET_DATA"))
-CHANNEL_DEBUG         = int(os.environ.get("CHANNEL_DEBUG"))
-OPENSEA_API_KEY       =     os.environ.get("OPENSEA_API_KEY")
+DISCORD_TOKEN   =     os.environ.get("DISCORD_TOKEN")
+DISCORD_GUILD   = int(os.environ.get("DISCORD_GUILD"))
+CHANNEL_0T      = int(os.environ.get("CHANNEL_0T"))
+CHANNEL_1T      = int(os.environ.get("CHANNEL_1T"))
+CHANNEL_2T      = int(os.environ.get("CHANNEL_2T"))
+CHANNEL_3T      = int(os.environ.get("CHANNEL_3T"))
+CHANNEL_4T      = int(os.environ.get("CHANNEL_4T"))
+CHANNEL_5T      = int(os.environ.get("CHANNEL_5T"))
+CHANNEL_6T      = int(os.environ.get("CHANNEL_6T"))
+CHANNEL_7T      = int(os.environ.get("CHANNEL_7T"))
+CHANNEL_DEBUG   = int(os.environ.get("CHANNEL_DEBUG"))
+OPENSEA_API_KEY =     os.environ.get("OPENSEA_API_KEY")
 
 # OpenSea API doc: https://docs.opensea.io/reference/api-overview
 OS_API_URL = "https://api.opensea.io/api/v1"
@@ -86,48 +105,82 @@ def handle_request(url, params = {}):
 
 
 
-floorT = {
-    0:100,
-    1:100,
-    2:100,
-    3:100,
-    4:100,
-    5:100,
-    6:100,
-    7:100
-}
+###  Get Floor by number of attributes  ###
+@tasks.loop(hours=6)
+async def Floors():
+
+
+    channels = [client.get_channel(CHANNEL_0T),
+                client.get_channel(CHANNEL_1T),
+                client.get_channel(CHANNEL_2T),
+                client.get_channel(CHANNEL_3T),
+                client.get_channel(CHANNEL_4T),
+                client.get_channel(CHANNEL_5T),
+                client.get_channel(CHANNEL_6T),
+                client.get_channel(CHANNEL_7T)]
+
+    channel_debug = client.get_channel(CHANNEL_DEBUG)
+
+    floorT = {
+        0:1000,
+        1:1000,
+        2:1000,
+        3:1000,
+        4:1000,
+        5:1000,
+        6:1000,
+        7:1000
+    }
+
+    for tokenId in range(1,10001):
+
+        asset_url = "{}/asset/{}/{}".format(OS_API_URL, LUCHA_ADDR, tokenId)
+        asset_body = handle_request(asset_url)
+        
+        if asset_body["code"] != 0:
+            await channel_debug.send(asset_body["msg"])
+            return
+
+        attr = asset_body["msg"]["traits"][-1]["value"]
+
+
+        listing_url = "{}/asset/{}/{}/listings".format(OS_API_URL, LUCHA_ADDR, tokenId)
+        listing_body = handle_request(listing_url)
+
+        if listing_body["code"] != 0:
+            await channel_debug.send(asset_body["msg"])
+            return
+
+        listings = listing_body["msg"]["listings"]
+
+
+        # if the lucha is listed on sale
+        if listings:
+
+            listingPrices = []
+            for price in listings:
+                listingPrices += [price["current_price"]]
+
+            listingPrice = float(min(listingPrices)) / (10**18)
+            if listingPrice < floorT[attr]:
+                floorT[attr] = listingPrice
+
+
+    for i in range(len(floorT)):
+
+        floor = floorT[i]
+        name = '『{}T』{}⬨'.format(i,round(floor,3)).replace('.','༝')
+        await channels[i].edit(name=name)
 
 
 
-for tokenId in range(1,10000):
+###  Start  ###
+@client.event
+async def on_ready():
 
-    url = "{}/asset/{}/{}".format(OS_API_URL, LUCHA_ADDR, tokenId)
-    events_body = handle_request(url)
-    
-    if events_body["code"] != 0:
-        print("fail")
-
-    name = events_body["msg"]["name"]
-    attr = events_body["msg"]["traits"][-1]["value"]
-
-    listing_url = "{}/asset/{}/{}/listings".format(OS_API_URL, LUCHA_ADDR, tokenId)
-    listing_body = handle_request(listing_url)
-
-    if listing_body["code"] != 0:
-        print("fail")
-
-    listings = listing_body["msg"]["listings"]
-
-    # if the lucha is listed on sale
-    if listings:
-
-        listingPrices = []
-        for price in listings:
-            listingPrices += [price["current_price"]]
-
-        listingPrice = float(min(listingPrices)) / (10**18)
-        if listingPrice < floorT[attr]:
-            floorT[attr] = listingPrice
+    if not Floors.is_running():
+        Floors.start()
 
 
-print(floorT)
+
+client.run(DISCORD_TOKEN)

@@ -263,7 +263,7 @@ async def getFloor():
 
     floorPrice = stats_body["msg"]['stats']['floor_price']
     
-    name = '『floor』{}♟'.format(round(floorPrice,3)).replace('.','༝')
+    name = '『floor』{}⬨'.format(round(floorPrice,3)).replace('.','༝')
     await channel_floor.edit(name=name)
 
 
