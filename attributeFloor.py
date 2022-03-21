@@ -1,6 +1,7 @@
 ###  IMPORTS  ###
 import os
 import json
+import datetime
 
 import requests
 from requests.packages.urllib3.util.retry import Retry
@@ -18,8 +19,6 @@ load_dotenv()
 ###  ENVIRONNEMENT VARIABLES  ###
 if not "DISCORD_TOKEN" in os.environ:
     exit("ENV VAR DISCORD_TOKEN not defined")
-if not "DISCORD_GUILD" in os.environ:
-    exit("ENV VAR DISCORD_GUILD not defined")
 if not "CHANNEL_0T" in os.environ:
     exit("ENV VAR CHANNEL_0T not defined")
 if not "CHANNEL_1T" in os.environ:
@@ -43,7 +42,6 @@ if not "OPENSEA_API_KEY" in os.environ:
 
 
 DISCORD_TOKEN   =     os.environ.get("DISCORD_TOKEN")
-DISCORD_GUILD   = int(os.environ.get("DISCORD_GUILD"))
 CHANNEL_0T      = int(os.environ.get("CHANNEL_0T"))
 CHANNEL_1T      = int(os.environ.get("CHANNEL_1T"))
 CHANNEL_2T      = int(os.environ.get("CHANNEL_2T"))
@@ -138,6 +136,7 @@ async def Floors():
         asset_body = handle_request(asset_url)
         
         if asset_body["code"] != 0:
+            print(asset_body["msg"])
             await channel_debug.send(asset_body["msg"])
             return
 
@@ -148,6 +147,7 @@ async def Floors():
         listing_body = handle_request(listing_url)
 
         if listing_body["code"] != 0:
+            print(asset_body["msg"])
             await channel_debug.send(asset_body["msg"])
             return
 
@@ -165,6 +165,10 @@ async def Floors():
             if listingPrice < floorT[attr]:
                 floorT[attr] = listingPrice
 
+
+    date = datetime.datetime.now()
+    date = date.strftime("%H:%M:%S")
+    await channel_debug.send("Last update: " + date)
 
     for i in range(len(floorT)):
 

@@ -1,6 +1,7 @@
 ###  IMPORTS  ###
 import os
 import json
+import datetime
 
 import requests
 from requests.packages.urllib3.util.retry import Retry
@@ -20,8 +21,6 @@ load_dotenv()
 ###  ENVIRONNEMENT VARIABLES  ###
 if not "DISCORD_TOKEN" in os.environ:
     exit("ENV VAR DISCORD_TOKEN not defined")
-if not "DISCORD_GUILD" in os.environ:
-    exit("ENV VAR DISCORD_GUILD not defined")
 if not "CHANNEL_GET_DATA" in os.environ:
     exit("ENV VAR CHANNEL_GET_DATA not defined")
 if not "CHANNEL_NEVER_CLAIMED" in os.environ:
@@ -46,7 +45,6 @@ if not "ALCHEMY_API_KEY" in os.environ:
     exit("ENV VAR ALCHEMY_API_KEY not defined")
 
 DISCORD_TOKEN         =     os.environ.get("DISCORD_TOKEN")
-DISCORD_GUILD         = int(os.environ.get("DISCORD_GUILD"))
 CHANNEL_GET_DATA      = int(os.environ.get("CHANNEL_GET_DATA"))
 CHANNEL_NEVER_CLAIMED = int(os.environ.get("CHANNEL_NEVER_CLAIMED"))
 CHANNEL_FLOOR         = int(os.environ.get("CHANNEL_FLOOR"))
@@ -147,10 +145,11 @@ def handle_request(url, params = {}):
 
 
 def create_embed(type,
-                       data,
-                       price  = None,
-                       seller = None,
-                       buyer  = None):
+                 event_date,
+                 data,
+                 price  = None,
+                 seller = None,
+                 buyer  = None):
 
     tokenId = data["token_id"]
     traits = data['traits'][-1]['value']
@@ -164,7 +163,11 @@ def create_embed(type,
     url = "{}/assets/{}/{}".format(OS_URL, CONTRACT_ADDR_2, tokenId)
 
 
-    embed = discord.Embed(title = "Luchadores {} {}".format(tokenId, type),
+    date = datetime.datetime.fromisoformat(event_date)
+    date = date.strftime("%H:%M:%S") # only H:M:S
+    title = "Luchadores {} {} ({})".format(tokenId, type, date)
+
+    embed = discord.Embed(title = title,
                           url   = url,
                           color = discord.Color.from_rgb(255,0,0))
     embed.set_thumbnail(url = img_url)
@@ -294,7 +297,7 @@ async def getPrice():
 
 
 ###  Get events from OS: sales, listings, offers  ###
-last_event_id_treated = 4261108047
+last_event_id_treated = 4316490722
 @tasks.loop(minutes=1)
 async def getLastEvents():
 
@@ -358,6 +361,7 @@ async def getLastEvents():
                             return
 
                         embed = create_embed("sold (bundle)",
+                                            event["created_date"],
                                             asset_body["msg"],
                                             price,
                                             seller,
@@ -378,6 +382,7 @@ async def getLastEvents():
                         return
 
                     embed = create_embed("sold",
+                                        event["created_date"],
                                         asset_body["msg"],
                                         price,
                                         seller,
@@ -410,6 +415,7 @@ async def getLastEvents():
                             return
 
                         embed = create_embed("listed (bundle)",
+                                            event["created_date"],
                                             asset_body["msg"],
                                             price,
                                             seller)
@@ -429,6 +435,7 @@ async def getLastEvents():
                         return
 
                     embed = create_embed("listed",
+                                        event["created_date"],
                                         asset_body["msg"],
                                         price,
                                         seller)
@@ -438,38 +445,71 @@ async def getLastEvents():
 
             # offer
             elif event["event_type"] == "offer_entered":
-
-                try:
-                    seller = event["asset"]["owner"]["user"]["username"]
-                except:
-                    seller = event["asset"]["owner"]["address"][:8]
-                if seller == None: seller = event["asset"]["owner"]["address"][:8]
-
+                
                 try:
                     buyer = event["from_account"]["user"]["username"]
                 except:
                     buyer = event["from_account"]["address"][:8]
                 if buyer == None: buyer = event["from_account"]["address"][:8]
 
-                price = int(event["bid_amount"]) / (10**18)
+                # bundle
+                if event["asset_bundle"]:
+
+                    try:
+                        seller = event["asset_bundle"]["maker"]["user"]["username"]
+                    except:
+                        seller = event["asset_bundle"]["maker"]["address"][:8]
+                    if seller == None: seller = event["asset_bundle"]["maker"]["address"][:8]
+
+                    price = int(event["bid_amount"]) / (10**18)
+
+                    for asset in event["asset_bundle"]["assets"]:
+                        tokenId = asset["token_id"]
+                    
+                        asset_url = "{}/asset/{}/{}".format(OS_API_URL,CONTRACT_ADDR_2, tokenId)
+                        asset_body = handle_request(asset_url)
+
+                        if asset_body["code"] != 0:
+                            await channel_debug.send(asset_body["msg"])
+                            return
+
+                        embed = create_embed("wanted (bundle)",
+                                            event["created_date"],
+                                            asset_body["msg"],
+                                            price,
+                                            seller,
+                                            buyer)
+
+                        offers += [embed]
 
 
-                tokenId = event["asset"]["token_id"]
-                
-                asset_url = "{}/asset/{}/{}".format(OS_API_URL,CONTRACT_ADDR_2, tokenId)
-                asset_body = handle_request(asset_url)
+                # single asset
+                elif event["asset"]:
+                    try:
+                        seller = event["asset"]["owner"]["user"]["username"]
+                    except:
+                        seller = event["asset"]["owner"]["address"][:8]
+                    if seller == None: seller = event["asset"]["owner"]["address"][:8]
 
-                if asset_body["code"] != 0:
-                    await channel_debug.send(asset_body["msg"])
-                    return
+                    price = int(event["bid_amount"]) / (10**18)
 
-                embed = create_embed("wanted",
-                                    asset_body["msg"],
-                                    price,
-                                    seller,
-                                    buyer)
+                    tokenId = event["asset"]["token_id"]
+                    
+                    asset_url = "{}/asset/{}/{}".format(OS_API_URL,CONTRACT_ADDR_2, tokenId)
+                    asset_body = handle_request(asset_url)
 
-                offers += [embed]
+                    if asset_body["code"] != 0:
+                        await channel_debug.send(asset_body["msg"])
+                        return
+
+                    embed = create_embed("wanted",
+                                        event["created_date"],
+                                        asset_body["msg"],
+                                        price,
+                                        seller,
+                                        buyer)
+
+                    offers += [embed]
 
         # the OS API sends back the last 20 events:
         # if more than 20 events happened in 1min,
@@ -584,6 +624,7 @@ async def on_message(message):
             listingPrice = float(min(listingPrices)) / (10**18)
 
         embed = create_embed("checked",
+                            str(datetime.datetime.now()),
                             asset_body["msg"],
                             listingPrice,
                             seller)
