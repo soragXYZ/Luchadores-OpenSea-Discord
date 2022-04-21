@@ -6,7 +6,8 @@ Ce bot discord permet d'afficher les données en temps réel sur la collection N
 
 ## Prérequis et variables d'environnement :
 
-Pour faire fonctionner le bot, une clé API OpenSea est nécessaire. Vous pouvez en faire la demande [ici](https://docs.opensea.io/reference/request-an-api-key)
+Pour faire fonctionner le bot, une clé API OpenSea est nécessaire. Vous pouvez en faire la demande [ici](https://docs.opensea.io/reference/request-an-api-key).
+
 Il faut ensuite créer plusieurs salons discord
 
 ## Installation :
