@@ -23,8 +23,6 @@ if not "DISCORD_TOKEN" in os.environ:
     exit("ENV VAR DISCORD_TOKEN not defined")
 if not "CHANNEL_GET_DATA" in os.environ:
     exit("ENV VAR CHANNEL_GET_DATA not defined")
-if not "CHANNEL_NEVER_CLAIMED" in os.environ:
-    exit("ENV VAR CHANNEL_NEVER_CLAIMED not defined")
 if not "CHANNEL_FLOOR" in os.environ:
     exit("ENV VAR CHANNEL_FLOOR not defined")
 if not "CHANNEL_ETH_PRICE" in os.environ:
@@ -46,7 +44,6 @@ if not "ALCHEMY_API_KEY" in os.environ:
 
 DISCORD_TOKEN         =     os.environ.get("DISCORD_TOKEN")
 CHANNEL_GET_DATA      = int(os.environ.get("CHANNEL_GET_DATA"))
-CHANNEL_NEVER_CLAIMED = int(os.environ.get("CHANNEL_NEVER_CLAIMED"))
 CHANNEL_FLOOR         = int(os.environ.get("CHANNEL_FLOOR"))
 CHANNEL_ETH_PRICE     = int(os.environ.get("CHANNEL_ETH_PRICE"))
 CHANNEL_LUCHA_PRICE   = int(os.environ.get("CHANNEL_LUCHA_PRICE"))
@@ -60,10 +57,21 @@ ALCHEMY_API_KEY       =     os.environ.get("ALCHEMY_API_KEY")
 
 
 ###  RPC AND CONTRACT ABI  ###
-ALCHEMY_WS = "wss://polygon-mainnet.g.alchemy.com/v2"
+session = requests.Session()
+retries = Retry(total = 5,
+                backoff_factor = 0.5,
+                status_forcelist = [413, 429, 495, 500, 502, 503, 504]
+)
+session.mount('https://', HTTPAdapter(max_retries=retries))
 
-RPC_URL = "{}/{}".format(ALCHEMY_WS, ALCHEMY_API_KEY)
-web3 = Web3(Web3.WebsocketProvider(RPC_URL, websocket_timeout=20))
+#ALCHEMY_WS = "wss://polygon-mainnet.g.alchemy.com/v2"
+#RPC_URL = "{}/{}".format(ALCHEMY_WS, ALCHEMY_API_KEY)
+#web3 = Web3(Web3.WebsocketProvider(RPC_URL, websocket_timeout=20))
+
+ALCHEMY_HTTP = "https://polygon-mainnet.g.alchemy.com/v2"
+RPC_URL = "{}/{}".format(ALCHEMY_HTTP, ALCHEMY_API_KEY)
+web3 = Web3(Web3.HTTPProvider(RPC_URL, session = session))
+
 
 with open("./luchaABI.txt", "r") as file:
     luchaABI = json.load(file)
@@ -100,12 +108,8 @@ LUCHADORES_IMG_URL = "https://luchadores-io.s3.us-east-2.amazonaws.com/img"
 
 
 
-###  Send get requests to opensea API  ###
+###  Send get requests to API  ###
 def handle_request(url, params = {}):
-
-    session = requests.Session()
-    retries = Retry(total=5, backoff_factor=0.5, status_forcelist=[429,495])
-    session.mount('https://', HTTPAdapter(max_retries=retries))
 
     try:
         response = session.request(
@@ -297,7 +301,7 @@ async def getPrice():
 
 
 ###  Get events from OS: sales, listings, offers  ###
-last_event_id_treated = 4316490722
+last_event_id_treated = 5249442469
 @tasks.loop(minutes=1)
 async def getLastEvents():
 
@@ -545,39 +549,12 @@ async def getLastEvents():
 @client.event
 async def on_message(message):
 
-    channel_get_data      = client.get_channel(CHANNEL_GET_DATA)
-    channel_never_claimed = client.get_channel(CHANNEL_NEVER_CLAIMED)
-    channel_debug         = client.get_channel(CHANNEL_DEBUG)
+    channel_get_data = client.get_channel(CHANNEL_GET_DATA)
+    channel_debug    = client.get_channel(CHANNEL_DEBUG)
 
     # If the bot send a msg, do nothing
     if message.author == client.user:
         return
-    
-    # Check how many lucha have been claimed out of 10k
-    if message.channel == channel_never_claimed:
-
-        msg = "Fetching data, plz wait, it can take up to 1h..."
-        await channel_never_claimed.send(msg)
-        
-        not_claimed = []
-        counter = 0
-
-        for i in range(1,10000):
-
-            hasBeenClaimed = lucha_claim.functions.lastClaim(i).call()
-            if not hasBeenClaimed:
-                not_claimed.append(i)
-                counter += 1
-
-            if counter == 10:
-                counter = 0
-                await channel_never_claimed.send(not_claimed[-10:])
-        await channel_never_claimed.send(not_claimed[-counter:])    
-
-        msg = "Total not claimed on 10k lucha: "
-        msg += str(len(not_claimed))
-        await channel_never_claimed.send(msg)
-
 
     # fetch opensea data on a specific lucha
     elif message.channel == channel_get_data:
