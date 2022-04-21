@@ -35,6 +35,8 @@ if not "CHANNEL_LISTINGS" in os.environ:
     exit("ENV VAR CHANNEL_LISTINGS not defined")
 if not "CHANNEL_OFFERS" in os.environ:
     exit("ENV VAR CHANNEL_OFFERS not defined")
+if not "CHANNEL_TRANSFERS" in os.environ:
+    exit("ENV VAR CHANNEL_TRANSFERS not defined")
 if not "CHANNEL_DEBUG" in os.environ:
     exit("ENV VAR CHANNEL_DEBUG not defined")
 if not "OPENSEA_API_KEY" in os.environ:
@@ -50,6 +52,7 @@ CHANNEL_LUCHA_PRICE   = int(os.environ.get("CHANNEL_LUCHA_PRICE"))
 CHANNEL_SALES         = int(os.environ.get("CHANNEL_SALES"))
 CHANNEL_LISTINGS      = int(os.environ.get("CHANNEL_LISTINGS"))
 CHANNEL_OFFERS        = int(os.environ.get("CHANNEL_OFFERS"))
+CHANNEL_TRANSFERS     = int(os.environ.get("CHANNEL_TRANSFERS"))
 CHANNEL_DEBUG         = int(os.environ.get("CHANNEL_DEBUG"))
 OPENSEA_API_KEY       =     os.environ.get("OPENSEA_API_KEY")
 ALCHEMY_API_KEY       =     os.environ.get("ALCHEMY_API_KEY")
@@ -158,10 +161,17 @@ def create_embed(type,
     tokenId = data["token_id"]
     traits = data['traits'][-1]['value']
 
-    hasBeenClaimed = lucha_claim.functions.lastClaim(int(tokenId)).call()
-    claimed = True if hasBeenClaimed else False
+    done = False
+    while not done:
+        try:
+            hasBeenClaimed = lucha_claim.functions.lastClaim(int(tokenId)).call()
+            claimed = True if hasBeenClaimed else False
 
-    pendingYield   = lucha_claim.functions.pendingYield(int(tokenId)).call() / (10**18)
+            pendingYield = lucha_claim.functions.pendingYield(int(tokenId)).call() / (10**18)
+            done = True
+
+        except:
+            pass
 
     img_url  = "{}/{}.png".format(LUCHADORES_IMG_URL, tokenId)
     url = "{}/assets/{}/{}".format(OS_URL, CONTRACT_ADDR_2, tokenId)
@@ -239,7 +249,7 @@ def create_embed(type,
                             inline = True)
 
 
-    if "wanted" in type:
+    elif "wanted" in type:
         embed.add_field(name   = "ETH Proposed Price",
                         value  = price,
                         inline = True)
@@ -247,6 +257,14 @@ def create_embed(type,
                         value  = seller,
                         inline = True)
         embed.add_field(name   = "Proposer",
+                        value  = buyer,
+                        inline = True)
+
+    elif type == "transfered":
+        embed.add_field(name   = "From",
+                        value  = seller,
+                        inline = True)
+        embed.add_field(name   = "To",
                         value  = buyer,
                         inline = True)
 
@@ -300,8 +318,15 @@ async def getPrice():
 
 
 
+###  INIT EVENT ID  ###    
+params = {'asset_contract_address': CONTRACT_ADDR_2}
+events_url = "{}/events".format(OS_API_URL)
+events_body = handle_request(events_url, params)
+last_event_id_treated = int(events_body["msg"]["asset_events"][0]["id"])
+#last_event_id_treated = 5249442469
+
+
 ###  Get events from OS: sales, listings, offers  ###
-last_event_id_treated = 5249442469
 @tasks.loop(minutes=1)
 async def getLastEvents():
 
@@ -318,9 +343,10 @@ async def getLastEvents():
         return
     
     current_event_id = int(events_body["msg"]["asset_events"][0]["id"])
-    listings = []
-    sales    = []
-    offers   = []
+    listings  = []
+    sales     = []
+    offers    = []
+    transfers = []
     
     done = False
     while not done:
@@ -515,6 +541,40 @@ async def getLastEvents():
 
                     offers += [embed]
 
+
+            # transfer
+            if event["event_type"] == "transfer":
+
+                try:
+                    seller = event["from_account"]["user"]["username"]
+                except:
+                    seller = event["from_account"]["address"][:8]
+                if seller == None: seller = event["from_account"]["address"][:8]
+                
+                try:
+                    buyer = event["to_account"]["user"]["username"]
+                except:
+                    buyer = event["to_account"]["address"][:8]
+                if buyer == None: buyer = event["to_account"]["address"][:8]
+
+
+                tokenId = event["asset"]["token_id"]
+
+                asset_url = "{}/asset/{}/{}".format(OS_API_URL,CONTRACT_ADDR_2, tokenId)
+                asset_body = handle_request(asset_url)
+
+                if asset_body["code"] != 0:
+                    await channel_debug.send(asset_body["msg"])
+                    return
+
+                embed = create_embed("transfered",
+                                    event["created_date"],
+                                    asset_body["msg"],
+                                    seller = seller,
+                                    buyer = buyer)
+
+                transfers += [embed]
+
         # the OS API sends back the last 20 events:
         # if more than 20 events happened in 1min,
         # do an another API call on previous events
@@ -532,9 +592,10 @@ async def getLastEvents():
 
     last_event_id_treated = current_event_id
 
-    channel_listings = client.get_channel(CHANNEL_LISTINGS)
-    channel_sales    = client.get_channel(CHANNEL_SALES)
-    channel_offers   = client.get_channel(CHANNEL_OFFERS)
+    channel_listings  = client.get_channel(CHANNEL_LISTINGS)
+    channel_sales     = client.get_channel(CHANNEL_SALES)
+    channel_offers    = client.get_channel(CHANNEL_OFFERS)
+    channel_transfers = client.get_channel(CHANNEL_TRANSFERS)
 
     for msg in reversed(sales):
         await channel_sales.send(embed=msg)
@@ -542,6 +603,8 @@ async def getLastEvents():
         await channel_listings.send(embed=msg)
     for msg in reversed(offers):
         await channel_offers.send(embed=msg)
+    for msg in reversed(transfers):
+        await channel_transfers.send(embed=msg)
 
 
 
