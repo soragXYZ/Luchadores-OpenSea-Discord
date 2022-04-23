@@ -8,11 +8,11 @@ Il permet d'afficher:
 * Le floor price des luchadores en fonction de leur nombre d'attributs
 * Les détails d'un luchadore spécifique en écrivant son identifiant dans le salon dédié  
 
-![Exemple_bot](https://zupimages.net/viewer.php?id=22/16/rwxf.png)  
+![sales](img/sales.PNG)  
 
-![Exemple_channel](https://zupimages.net/viewer.php?id=22/16/9t36.png)  
+![channels](img/channels.PNG)  
 
-![Exemple_getData](https://zupimages.net/viewer.php?id=22/16/kpu4.png)
+![getData](img/get_data.PNG)
 
 ## Prérequis et variables d'environnement :
 
