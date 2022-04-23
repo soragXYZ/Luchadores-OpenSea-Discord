@@ -6,17 +6,17 @@ Ce bot discord permet d'afficher les données en temps réel sur la collection N
 Il permet d'afficher:  
 * Les ventes, listings, offres et transferts  
 <p align="center">
-![sales](img/sales.PNG)
+    <img src="img/sales.PNG">
 </p>
 
 * Le floor price des luchadores en fonction de leur nombre d'attributs  
 <p align="center">
-![channels](img/channels.PNG)
+    <img src="img/channels.PNG">
 </p>
 
 * Les détails d'un luchadore spécifique en écrivant son identifiant dans le salon dédié  
 <p align="center">
-![getData](img/get_data.PNG)
+    <img src="img/get_data.PNG">
 </p>
 
 ## Prérequis et variables d'environnement :
