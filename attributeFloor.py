@@ -2,6 +2,7 @@
 import os
 import json
 import datetime
+import time
 
 import requests
 from requests.packages.urllib3.util.retry import Retry
@@ -53,18 +54,35 @@ CHANNEL_7T      = int(os.environ.get("CHANNEL_7T"))
 CHANNEL_DEBUG   = int(os.environ.get("CHANNEL_DEBUG"))
 OPENSEA_API_KEY =     os.environ.get("OPENSEA_API_KEY")
 
+channels = [client.get_channel(CHANNEL_0T),
+            client.get_channel(CHANNEL_1T),
+            client.get_channel(CHANNEL_2T),
+            client.get_channel(CHANNEL_3T),
+            client.get_channel(CHANNEL_4T),
+            client.get_channel(CHANNEL_5T),
+            client.get_channel(CHANNEL_6T),
+            client.get_channel(CHANNEL_7T)]
+
+channel_debug = client.get_channel(CHANNEL_DEBUG)
+
+
 # OpenSea API doc: https://docs.opensea.io/reference/api-overview
 OS_API_URL = "https://api.opensea.io/api/v1"
 LUCHA_ADDR = "0x8b4616926705fb61e9c4eeac07cd946a5d4b0760"
 
 
+session = requests.Session()
+retries = Retry(total = 5,
+                respect_retry_after_header = False,
+                backoff_factor = 0,
+                status_forcelist = [413, 429, 495, 500, 502, 503, 504]
+)
+session.mount('https://', HTTPAdapter(max_retries=retries))
+
+
 
 ###  Send get requests to opensea API  ###
 def handle_request(url, params = {}):
-
-    session = requests.Session()
-    retries = Retry(total=5, backoff_factor=1, status_forcelist=[429,495])
-    session.mount('https://', HTTPAdapter(max_retries=retries))
 
     try:
         response = session.request(
@@ -74,7 +92,6 @@ def handle_request(url, params = {}):
                        "X-API-KEY": OPENSEA_API_KEY},
             params = params
         )
-        response.raise_for_status()
 
     except requests.exceptions.HTTPError as errh:
         msg = "Http error: " + str(errh)
@@ -108,17 +125,6 @@ def handle_request(url, params = {}):
 async def Floors():
 
 
-    channels = [client.get_channel(CHANNEL_0T),
-                client.get_channel(CHANNEL_1T),
-                client.get_channel(CHANNEL_2T),
-                client.get_channel(CHANNEL_3T),
-                client.get_channel(CHANNEL_4T),
-                client.get_channel(CHANNEL_5T),
-                client.get_channel(CHANNEL_6T),
-                client.get_channel(CHANNEL_7T)]
-
-    channel_debug = client.get_channel(CHANNEL_DEBUG)
-
     floorT = {
         0:1000,
         1:1000,
@@ -132,11 +138,11 @@ async def Floors():
 
     for tokenId in range(1,10001):
 
+        time.sleep(0.3)
         asset_url = "{}/asset/{}/{}".format(OS_API_URL, LUCHA_ADDR, tokenId)
         asset_body = handle_request(asset_url)
         
         if asset_body["code"] != 0:
-            print(asset_body["msg"])
             await channel_debug.send(asset_body["msg"])
             return
 
@@ -147,8 +153,7 @@ async def Floors():
         listing_body = handle_request(listing_url)
 
         if listing_body["code"] != 0:
-            print(asset_body["msg"])
-            await channel_debug.send(asset_body["msg"])
+            await channel_debug.send(listing_body["msg"])
             return
 
         listings = listing_body["msg"]["listings"]

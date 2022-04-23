@@ -44,18 +44,19 @@ if not "OPENSEA_API_KEY" in os.environ:
 if not "ALCHEMY_API_KEY" in os.environ:
     exit("ENV VAR ALCHEMY_API_KEY not defined")
 
-DISCORD_TOKEN         =     os.environ.get("DISCORD_TOKEN")
-CHANNEL_GET_DATA      = int(os.environ.get("CHANNEL_GET_DATA"))
-CHANNEL_FLOOR         = int(os.environ.get("CHANNEL_FLOOR"))
-CHANNEL_ETH_PRICE     = int(os.environ.get("CHANNEL_ETH_PRICE"))
-CHANNEL_LUCHA_PRICE   = int(os.environ.get("CHANNEL_LUCHA_PRICE"))
-CHANNEL_SALES         = int(os.environ.get("CHANNEL_SALES"))
-CHANNEL_LISTINGS      = int(os.environ.get("CHANNEL_LISTINGS"))
-CHANNEL_OFFERS        = int(os.environ.get("CHANNEL_OFFERS"))
-CHANNEL_TRANSFERS     = int(os.environ.get("CHANNEL_TRANSFERS"))
-CHANNEL_DEBUG         = int(os.environ.get("CHANNEL_DEBUG"))
-OPENSEA_API_KEY       =     os.environ.get("OPENSEA_API_KEY")
-ALCHEMY_API_KEY       =     os.environ.get("ALCHEMY_API_KEY")
+DISCORD_TOKEN       =     os.environ.get("DISCORD_TOKEN")
+CHANNEL_GET_DATA    = int(os.environ.get("CHANNEL_GET_DATA"))
+CHANNEL_FLOOR       = int(os.environ.get("CHANNEL_FLOOR"))
+CHANNEL_ETH_PRICE   = int(os.environ.get("CHANNEL_ETH_PRICE"))
+CHANNEL_LUCHA_PRICE = int(os.environ.get("CHANNEL_LUCHA_PRICE"))
+CHANNEL_SALES       = int(os.environ.get("CHANNEL_SALES"))
+CHANNEL_LISTINGS    = int(os.environ.get("CHANNEL_LISTINGS"))
+CHANNEL_OFFERS      = int(os.environ.get("CHANNEL_OFFERS"))
+CHANNEL_TRANSFERS   = int(os.environ.get("CHANNEL_TRANSFERS"))
+CHANNEL_DEBUG       = int(os.environ.get("CHANNEL_DEBUG"))
+
+OPENSEA_API_KEY     =     os.environ.get("OPENSEA_API_KEY")
+ALCHEMY_API_KEY     =     os.environ.get("ALCHEMY_API_KEY")
 
 
 
@@ -67,22 +68,18 @@ retries = Retry(total = 5,
 )
 session.mount('https://', HTTPAdapter(max_retries=retries))
 
-#ALCHEMY_WS = "wss://polygon-mainnet.g.alchemy.com/v2"
-#RPC_URL = "{}/{}".format(ALCHEMY_WS, ALCHEMY_API_KEY)
-#web3 = Web3(Web3.WebsocketProvider(RPC_URL, websocket_timeout=20))
-
 ALCHEMY_HTTP = "https://polygon-mainnet.g.alchemy.com/v2"
 RPC_URL = "{}/{}".format(ALCHEMY_HTTP, ALCHEMY_API_KEY)
 web3 = Web3(Web3.HTTPProvider(RPC_URL, session = session))
-
-
-with open("./luchaABI.txt", "r") as file:
-    luchaABI = json.load(file)
 
 # Luchadores Polygon contract
 CONTRACT_ADDR_1 = "0xE8B73c064BD3B8c5DB438118543ACd6AAb18F108"
 # Luchadores Ethereum contract
 CONTRACT_ADDR_2 = "0x8b4616926705fb61e9c4eeac07cd946a5d4b0760"
+
+with open("./luchaABI.txt", "r") as file:
+    luchaABI = json.load(file)
+
 lucha_claim = web3.eth.contract(address=CONTRACT_ADDR_1, abi=luchaABI)
 
 
@@ -201,24 +198,19 @@ def create_embed(type,
 
     if( "listed"  in type
      or "sold"    in type
-     or "checked" in type):
+     or type == "checked"):
         if price:
             
             channel_debug = client.get_channel(CHANNEL_DEBUG)
             
-
             params = {'ids':'ethereum,lucha', 'vs_currencies':'usd'}
             price_body = handle_request(CG_API_URL, params)
             
             if price_body["code"] != 0:
                 channel_debug.send(price_body["msg"])
                 
-            try:
-                lucha_price    = price_body["msg"]["lucha"]["usd"]
-                ethereum_price = price_body["msg"]["ethereum"]["usd"]
-            except:
-                lucha_price = 1
-                ethereum_price = 0
+            lucha_price    = price_body["msg"]["lucha"]["usd"]
+            ethereum_price = price_body["msg"]["ethereum"]["usd"]
 
             fiat_price = price * ethereum_price
             
@@ -247,7 +239,6 @@ def create_embed(type,
             embed.add_field(name   = "Owner",
                             value  = seller,
                             inline = True)
-
 
     elif "wanted" in type:
         embed.add_field(name   = "ETH Proposed Price",
@@ -279,9 +270,9 @@ async def getFloor():
     channel_floor = client.get_channel(CHANNEL_FLOOR)
     channel_debug = client.get_channel(CHANNEL_DEBUG)
 
-    
     stats_url = "{}/collection/{}/stats".format(OS_API_URL, COLLECTION_SLUG)
     stats_body = handle_request(stats_url)
+
     if stats_body["code"] != 0:
         await channel_debug.send(stats_body["msg"])
         return
@@ -303,6 +294,7 @@ async def getPrice():
 
     params = {'ids':'ethereum,lucha', 'vs_currencies':'usd'}
     price_body = handle_request(CG_API_URL, params)
+
     if price_body["code"] != 0:
         await channel_debug.send(price_body["msg"])
         return
@@ -323,8 +315,7 @@ params = {'asset_contract_address': CONTRACT_ADDR_2}
 events_url = "{}/events".format(OS_API_URL)
 events_body = handle_request(events_url, params)
 last_event_id_treated = int(events_body["msg"]["asset_events"][0]["id"])
-#last_event_id_treated = 5249442469
-
+#last_event_id_treated = 5324346000
 
 ###  Get events from OS: sales, listings, offers  ###
 @tasks.loop(minutes=1)
@@ -332,7 +323,7 @@ async def getLastEvents():
 
     global last_event_id_treated
 
-    channel_debug    = client.get_channel(CHANNEL_DEBUG)
+    channel_debug = client.get_channel(CHANNEL_DEBUG)
     
     params = {'asset_contract_address': CONTRACT_ADDR_2}
     events_url = "{}/events".format(OS_API_URL)
@@ -419,6 +410,7 @@ async def getLastEvents():
                                         buyer)
 
                     sales += [embed]
+
 
             # listing
             elif event["event_type"] == "created":
@@ -556,7 +548,6 @@ async def getLastEvents():
                 except:
                     buyer = event["to_account"]["address"][:8]
                 if buyer == None: buyer = event["to_account"]["address"][:8]
-
 
                 tokenId = event["asset"]["token_id"]
 
