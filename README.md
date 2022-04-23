@@ -4,15 +4,20 @@
 
 Ce bot discord permet d'afficher les données en temps réel sur la collection NFT luchadores-io en récupérant les données depuis l'API d'OpenSea.  
 Il permet d'afficher:  
-* Les ventes, listings, offres et transferts
-* Le floor price des luchadores en fonction de leur nombre d'attributs
+* Les ventes, listings, offres et transferts  
+<p align="center">
+![sales](img/sales.PNG)
+</p>
+
+* Le floor price des luchadores en fonction de leur nombre d'attributs  
+<p align="center">
+![channels](img/channels.PNG)
+</p>
+
 * Les détails d'un luchadore spécifique en écrivant son identifiant dans le salon dédié  
-
-![sales](img/sales.PNG)  
-
-![channels](img/channels.PNG)  
-
+<p align="center">
 ![getData](img/get_data.PNG)
+</p>
 
 ## Prérequis et variables d'environnement :
 
